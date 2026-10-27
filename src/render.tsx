@@ -341,7 +341,6 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pe
       if (side === 'auto') side = h ? 'above' : 'right';
       const sec = sectionAt(doc, s);
       const haloColour = sec ? tintList[sec.tint % tintList.length] : exporting ? null : th.surface;
-      const halo = haloColour ? { paintOrder: 'stroke' as const, stroke: haloColour, strokeWidth: 4, strokeLinejoin: 'round' as const } : {};
       const across = h ? ext.across : ext.along;
       const along = h ? ext.along : ext.across;
       let x = s.x;
@@ -358,18 +357,16 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pe
         y = s.y + 4.5;
         anchor = 'end';
       }
+      const common = { x, y, textAnchor: anchor, fontSize: 13, fontWeight: 600 } as const;
+      // The halo is a separate stroked copy underneath (paint-order is not portable to PDF).
+      if (haloColour)
+        labelEls.push(
+          <text key={`hl-${s.id}`} {...common} fill={haloColour} stroke={haloColour} strokeWidth={4} strokeLinejoin="round" aria-hidden="true">
+            {s.label}
+          </text>,
+        );
       labelEls.push(
-        <text
-          key={`lb-${s.id}`}
-          data-sel={`station:${s.id}`}
-          x={x}
-          y={y}
-          textAnchor={anchor}
-          fontSize={13}
-          fontWeight={600}
-          fill={s.optional || s.inactive ? th.muted : th.ink}
-          {...halo}
-        >
+        <text key={`lb-${s.id}`} data-sel={`station:${s.id}`} {...common} fill={s.optional || s.inactive ? th.muted : th.ink}>
           {s.label}
         </text>,
       );

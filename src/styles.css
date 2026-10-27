@@ -88,3 +88,6 @@ button.wide { width: 100%; }
   .panel { display: none; }
   .topbar { overflow-x: auto; }
 }
+.menu-list .sub { color: var(--muted); font-size: 12px; margin-left: 6px; }
+.menu-list .fit { font-size: 12px; line-height: 17px; color: var(--muted); padding: 6px 10px 8px; max-width: 300px; }
+.menu-list .fit.warn { color: #b44a3a; }

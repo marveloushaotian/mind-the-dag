@@ -435,6 +435,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
 
 
   // --- stations, labels, files
+  const labelAt = new Map<string, { x: number; y: number; anchor: 'start' | 'middle' | 'end' }>();
   const stationEls: ReactNode[] = [];
   const labelEls: ReactNode[] = [];
   const fileEls: ReactNode[] = [];
@@ -510,14 +511,19 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
           <rect x={s.x - H / 2} y={s.y + x0} width={H} height={6} rx={2} fill={stroke} />
         );
       }
-      if (s.file) {
+    }
+    if (s.file && kind !== 'junction') {
+      {
+        const H = W + PITCH * (k - 1) + 2 * tokens.terminus.overhang;
         // The icon sits beyond the terminus, 6 px clear of the flag or bar. Extra sheets step
         // away from the line. If that spot collides with another station or icon, try above,
         // then below the terminus.
         const gap = tokens.terminus.iconClearance;
         const back = -sides.toLine;
         const termOuter = kind === 'start' ? 4.5 : kind === 'stop' ? 6 : 10.5;
-        const half = kind === 'step' ? ext.across : H / 2;
+        const half = kind === 'start' || kind === 'stop' ? H / 2 : ext.across;
+        // Only a start or stop at the end of a line has an open end for its icon.
+        const openEnd = (kind === 'start' || kind === 'stop') && !sides.middle && (sides.neg || sides.pos);
         const count = s.file.count;
         const tryPlace = (where: 'out' | 'before' | 'after') => {
           // Work in flow (u) / across (v) coordinates, then map to x/y.
@@ -578,12 +584,19 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
           return { cx, cy, sx, sy, box, caption };
         };
         // A terminus in the middle of a line has no open end: put the icon above or below it.
-        const options = ((sides.middle ? ['before', 'after'] : ['out', 'before', 'after']) as ('out' | 'before' | 'after')[]).map(tryPlace);
+        const options = ((openEnd ? ['out', 'before', 'after'] : ['before', 'after']) as ('out' | 'before' | 'after')[]).map(tryPlace);
         // Own connections only leave on the line side, so they never block the open end.
         const own = new Set(doc.edges.filter((e) => e.from === s.id || e.to === s.id).map((e) => `edge-${e.id}`));
+        // A start or stop names its file group: its label moves above the icon, so it is not an obstacle here.
+        const isTerminus = kind === 'start' || kind === 'stop';
+        if (isTerminus && s.label) own.add(`label-${s.id}`);
         const free = options.find((o) => !obstacles.some((ob) => ob.id !== s.id && !own.has(ob.id) && overlaps(o.box, ob.box, gap)));
         const pick = free ?? options[0];
         obstacles.push({ id: `file-${s.id}`, box: pick.box });
+        if (isTerminus && s.label) {
+          const top = pick.caption && pick.caption.y < pick.cy ? pick.box.y0 : pick.cy + fileFootprint(count, 1, -1).y0;
+          labelAt.set(s.id, { x: pick.cx, y: top - 8, anchor: 'middle' });
+        }
         fileEls.push(fileIcon(pick.cx, pick.cy, s.file.ext, count, pick.sx, pick.sy, th, `file-${s.id}`));
         if (pick.caption)
           fileEls.push(
@@ -623,7 +636,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
     if (s.label) {
       const sec = sectionAt(doc, s);
       const haloColour = sec ? tintList[sec.tint % tintList.length] : exporting ? null : th.surface;
-      const { x, y, anchor } = labelPlacement(s, kind, n);
+      const { x, y, anchor } = labelAt.get(s.id) ?? labelPlacement(s, kind, n);
       const common = { x, y, textAnchor: anchor, fontSize: 13, fontWeight: 600 } as const;
       // The halo is a separate stroked copy underneath (paint-order is not portable to PDF).
       if (haloColour)

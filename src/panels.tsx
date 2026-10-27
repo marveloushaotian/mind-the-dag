@@ -234,15 +234,12 @@ export function Inspector({
     const s = doc.stations[i];
     if (!s) return null;
     const set = (fn: (st: typeof s) => void, key?: string) => update((d) => fn(d.stations[i]), key && `${key}-${s.id}`);
-    const terminus = s.kind === 'start' || s.kind === 'stop';
     return (
       <div className="stack">
         <h3>Station</h3>
-        {!terminus && (
-          <Field label="Name">
-            <input value={s.label} onChange={(e) => set((st) => void (st.label = e.target.value), 'label')} />
-          </Field>
-        )}
+        <Field label="Name">
+          <input value={s.label} onChange={(e) => set((st) => void (st.label = e.target.value), 'label')} />
+        </Field>
         <Field label="Type" group>
           <KindPicker value={s.kind} onChange={(k) => set((st) => void (st.kind = k))} />
         </Field>
@@ -257,7 +254,7 @@ export function Inspector({
             ]}
           />
         </Field>
-        {!terminus && (
+        {s.label && (
           <Field label="Label position">
             <select value={s.labelSide} onChange={(e) => set((st) => void (st.labelSide = e.target.value as LabelSide))}>
               {SIDES.map((x) => (
@@ -270,7 +267,7 @@ export function Inspector({
         )}
         <Toggle label="Optional" checked={!!s.optional} onChange={(v) => set((st) => void (st.optional = v))} />
         <Toggle label="Inactive" checked={!!s.inactive} onChange={(v) => set((st) => void (st.inactive = v))} />
-        {terminus && (
+        {s.kind !== 'junction' && (
           <>
             <Toggle label="File icon" checked={!!s.file} onChange={(v) => set((st) => void (st.file = v ? { ext: 'fastq', count: 1 } : undefined))} />
             {s.file && (

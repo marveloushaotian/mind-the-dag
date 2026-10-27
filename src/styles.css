@@ -1,3 +1,7 @@
+/* Inter 4.1 (SIL OFL 1.1), subset to Latin, Latin Extended, Greek, punctuation, arrows and maths; self-hosted. */
+@font-face { font-family: Inter; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/Inter-400.woff2') format('woff2'); }
+@font-face { font-family: Inter; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/Inter-600.woff2') format('woff2'); }
+@font-face { font-family: Inter; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/Inter-700.woff2') format('woff2'); }
 :root {
   --ink: #1a1d21;
   --muted: #5c636b;

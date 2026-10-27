@@ -1,6 +1,6 @@
 import { useId, type ReactNode } from 'react';
 import { laneToLeftOffset, roundedPath, routeCentre, type Pt } from './geometry';
-import { derive, laneOffset, lanePoint, PITCH, type Derived, type Doc, type Edge, type Station } from './model';
+import { derive, laneOffset, lanePoint, PITCH, type Derived, type Doc, type Edge, type LabelSide, type Station } from './model';
 import { lineStyle, tints, tokens, type ThemeId } from './tokens';
 
 /**
@@ -84,10 +84,10 @@ function lineSides(doc: Doc, dv: Derived, s: Station) {
 }
 
 /** Where a station's label goes, and the box it roughly covers (Inter 600, 13 px). */
-function labelPlacement(s: Station, kind: Station['kind'], n: number) {
+function labelPlacement(s: Station, kind: Station['kind'], n: number, decided?: LabelSide) {
   const ext = markerExtent(kind, n);
   const h = s.axis === 'h';
-  let side = s.labelSide;
+  let side = decided ?? s.labelSide;
   if (side === 'auto') side = h ? 'above' : 'right';
   const across = h ? ext.across : ext.along;
   const along = h ? ext.along : ext.across;
@@ -337,8 +337,6 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
     const [ax, ay] = s.axis === 'h' ? [e.along, e.across] : [e.across, e.along];
     return { id: s.id, box: { x0: s.x - ax, y0: s.y - ay, x1: s.x + ax, y1: s.y + ay } };
   });
-  for (const s of doc.stations)
-    if (s.label) obstacles.push({ id: `label-${s.id}`, box: labelPlacement(s, drawnKind(doc, dv, s), dv.stationLines.get(s.id)?.length ?? 0).box });
   for (const sec of doc.sections)
     obstacles.push({ id: `sec-${sec.id}`, box: { x0: sec.x + 12, y0: sec.y + 12, x1: sec.x + 44 + sec.name.length * 8.4, y1: sec.y + 40 } });
 
@@ -433,6 +431,51 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
     } else edgeEls.push(<g key={`g-${e.id}`}>{ownEls}</g>);
   }
 
+
+  // --- label sides (spec §7): one side per straight run, chosen to avoid what is already drawn
+  const sideOf = new Map<string, LabelSide>();
+  {
+    const parent = new Map(doc.stations.map((s) => [s.id, s.id]));
+    const find = (x: string): string => (parent.get(x) === x ? x : find(parent.get(x)!));
+    for (const e of doc.edges) {
+      const g = geoms.get(e.id);
+      const A = dv.byId.get(e.from);
+      const B = dv.byId.get(e.to);
+      if (g && A && B && A.axis === B.axis && g.centre.length === 2) parent.set(find(A.id), find(B.id));
+    }
+    const kindOf = (s: Station) => drawnKind(doc, dv, s);
+    const nOf = (s: Station) => dv.stationLines.get(s.id)?.length ?? 0;
+    // Text over text is unreadable, so another label weighs most; a line passing behind (with its halo) least.
+    const weight = (id: string) => (id.startsWith('label-') ? 20 : id.startsWith('edge-') ? 1 : 5);
+    const hits = (sid: string, box: Box) => obstacles.reduce((acc, ob) => (ob.id !== sid && overlaps(box, ob.box, 2) ? acc + weight(ob.id) : acc), 0);
+    // Labels with a fixed side go down first.
+    for (const s of doc.stations)
+      if (s.label && s.labelSide !== 'auto') obstacles.push({ id: `label-${s.id}`, box: labelPlacement(s, kindOf(s), nOf(s)).box });
+    const groups = new Map<string, Station[]>();
+    for (const s of doc.stations) {
+      if (!s.label || s.labelSide !== 'auto') continue;
+      const r = find(s.id);
+      groups.set(r, [...(groups.get(r) ?? []), s]);
+    }
+    for (const members of groups.values()) {
+      // Above/below for horizontal runs (left/right for vertical); the cross sides only as a last resort.
+      const sides: LabelSide[] = members[0].axis === 'h' ? ['above', 'below', 'right', 'left'] : ['right', 'left', 'above', 'below'];
+      let best = sides[0];
+      let bestScore = Infinity;
+      for (const side of sides) {
+        const score = members.reduce((acc, s) => acc + hits(s.id, labelPlacement(s, kindOf(s), nOf(s), side).box), 0);
+        if (score < bestScore) {
+          best = side;
+          bestScore = score;
+        }
+        if (score === 0) break;
+      }
+      for (const s of members) {
+        sideOf.set(s.id, best);
+        obstacles.push({ id: `label-${s.id}`, box: labelPlacement(s, kindOf(s), nOf(s), best).box });
+      }
+    }
+  }
 
   // --- stations, labels, files
   const labelAt = new Map<string, { x: number; y: number; anchor: 'start' | 'middle' | 'end' }>();
@@ -636,7 +679,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
     if (s.label) {
       const sec = sectionAt(doc, s);
       const haloColour = sec ? tintList[sec.tint % tintList.length] : exporting ? null : th.surface;
-      const { x, y, anchor } = labelAt.get(s.id) ?? labelPlacement(s, kind, n);
+      const { x, y, anchor } = labelAt.get(s.id) ?? labelPlacement(s, kind, n, sideOf.get(s.id));
       const common = { x, y, textAnchor: anchor, fontSize: 13, fontWeight: 600 } as const;
       // The halo is a separate stroked copy underneath (paint-order is not portable to PDF).
       if (haloColour)

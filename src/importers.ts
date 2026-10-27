@@ -1,4 +1,5 @@
 import type { Doc } from './model';
+import { parseMmd } from './mmd';
 
 function validate(d: unknown): Doc {
   const x = d as Doc;
@@ -11,7 +12,7 @@ function validate(d: unknown): Doc {
 export async function importFile(f: File): Promise<Doc> {
   const text = await f.text();
   if (/\.mmd$/i.test(f.name) || /^\s*(%%metro|graph\s|flowchart\s)/m.test(text)) {
-    throw new Error('.mmd import is not available yet');
+    return parseMmd(text);
   }
   return validate(JSON.parse(text));
 }

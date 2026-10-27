@@ -31,6 +31,8 @@ export interface Line {
   name: string;
   /** Index into the palette's line list. */
   slot: number;
+  /** Dash pattern override; normally the palette slot decides. */
+  pattern?: 'dashed' | 'dotted';
   planned?: boolean;
 }
 

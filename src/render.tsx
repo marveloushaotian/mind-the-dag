@@ -29,6 +29,10 @@ interface Theme {
   inactive: string;
 }
 
+function withPattern<T extends { pattern: string | null }>(st: T, override?: 'dashed' | 'dotted'): T {
+  return override ? { ...st, pattern: override } : st;
+}
+
 function themeColours(theme: ThemeId): Theme {
   const t = tokens.themes[theme];
   return { ink: t.ink, surface: t.surface, muted: t.muted, inactive: t.inactive };
@@ -172,7 +176,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pe
     }
     for (const ln of g.lines) {
       const line = doc.lines.find((l) => l.id === ln.id)!;
-      const st = lineStyle(doc.palette, line.slot, theme);
+      const st = withPattern(lineStyle(doc.palette, line.slot, theme), line.pattern);
       const dash = st.pattern === 'dashed' ? tokens.line.patterns.dashed.join(' ') : st.pattern === 'dotted' ? tokens.line.patterns.dotted.dash.join(' ') : undefined;
       if (line.planned) {
         const half = (W - tokens.planned.wall) / 2;
@@ -379,7 +383,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pe
     const { x, y } = doc.legend;
     const rows = doc.lines.filter((l) => usedLines.has(l.id));
     rows.forEach((l, i) => {
-      const st = lineStyle(doc.palette, l.slot, theme);
+      const st = withPattern(lineStyle(doc.palette, l.slot, theme), l.pattern);
       const ry = y + i * 36;
       const dash = st.pattern === 'dashed' ? '12 8' : st.pattern === 'dotted' ? '2 10' : undefined;
       if (l.planned) {
@@ -407,7 +411,9 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pe
     if (hasCapsule) kinds.push('shared step');
     if (doc.stations.some((s) => s.kind === 'merge')) kinds.push('merge');
     if (doc.stations.some((s) => s.optional)) kinds.push('optional');
-    const kx = x + 212;
+    // Shape key starts after the longest line name (Inter 12 px ≈ 6.6 px per character).
+    const longest = Math.max(0, ...rows.map((l) => l.name.length));
+    const kx = x + Math.max(212, 42 + Math.ceil((longest * 6.6) / 8) * 8 + 40);
     kinds.forEach((kd, i) => {
       const ry = y + i * 36;
       const gx = kx + 10;

@@ -11,8 +11,9 @@ const Field = ({ label, children }: { label: string; children: ReactNode }) => (
   </label>
 );
 
-function Swatch({ doc, slot, theme }: { doc: Doc; slot: number; theme: ThemeId }) {
-  const st = lineStyle(doc.palette, slot, theme);
+function Swatch({ doc, slot, theme, pattern }: { doc: Doc; slot: number; theme: ThemeId; pattern?: 'dashed' | 'dotted' }) {
+  const base = lineStyle(doc.palette, slot, theme);
+  const st = pattern ? { ...base, pattern } : base;
   const dash = st.pattern === 'dashed' ? '6 4' : st.pattern === 'dotted' ? '1 5' : undefined;
   return (
     <svg width="28" height="12" aria-hidden="true">
@@ -87,7 +88,7 @@ export function LinesPanel({
         {doc.lines.map((l, i) => (
           <li key={l.id} className={active === l.id ? 'active' : ''}>
             <input type="radio" name="active-line" checked={active === l.id} onChange={() => setActive(l.id)} title="Active line" />
-            <Swatch doc={doc} slot={l.slot} theme={theme} />
+            <Swatch doc={doc} slot={l.slot} theme={theme} pattern={l.pattern} />
             <div className="grow">
               <input value={l.name} onChange={(e) => update((d) => void (d.lines[i].name = e.target.value), `line-name-${l.id}`)} aria-label="Line name" />
               <div className="row small">
@@ -98,6 +99,18 @@ export function LinesPanel({
                     </option>
                   ))}
                 </select>
+                <select
+                  value={l.pattern ?? ''}
+                  onChange={(e) => update((d) => void (d.lines[i].pattern = (e.target.value || undefined) as 'dashed' | 'dotted' | undefined))}
+                  aria-label="Pattern"
+                  title="Pattern"
+                >
+                  <option value="">solid</option>
+                  <option value="dashed">dashed</option>
+                  <option value="dotted">dotted</option>
+                </select>
+              </div>
+              <div className="row small">
                 <label className="check" title="Planned: drawn as a cased line">
                   <input type="checkbox" checked={!!l.planned} onChange={(e) => update((d) => void (d.lines[i].planned = e.target.checked))} /> planned
                 </label>

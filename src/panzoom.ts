@@ -9,7 +9,8 @@ export interface View {
 /**
  * Wheel and pinch on a canvas: only the canvas zooms (never the page), around the pointer.
  * Plain wheel and two-finger scroll pan; pinch (ctrl + wheel) or ⌘/Ctrl + wheel zooms;
- * Safari's gesture events zoom too.
+ * Safari's gesture events zoom too. While the canvas is mounted, pinching over the panels
+ * does nothing, so the page itself never zooms.
  */
 export function usePanZoom(
   svgRef: RefObject<SVGSVGElement | null>,
@@ -42,25 +43,41 @@ export function usePanZoom(
       const dy = (e.shiftKey && !e.deltaX ? 0 : e.deltaY) * unit;
       setView((v) => ({ ...v, x: v.x + dx / v.k, y: v.y + dy / v.k }));
     };
-    // Safari reports pinch as gesture events.
+    // Pinch anywhere else on the page (panels, top bar) must not zoom the page either.
+    const onWindowWheel = (e: WheelEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !svg.contains(e.target as Node)) e.preventDefault();
+    };
+    // Safari reports pinch as gesture events, on whatever is under the fingers.
     let last = 1;
+    let overCanvas = false;
+    const inside = (x: number, y: number) => {
+      const r = svg.getBoundingClientRect();
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    };
     const onGestureStart = (e: Event) => {
       e.preventDefault();
       last = 1;
+      const g = e as Event & { clientX?: number; clientY?: number };
+      overCanvas = inside(g.clientX ?? lastClient.current.x, g.clientY ?? lastClient.current.y);
     };
     const onGestureChange = (e: Event) => {
       e.preventDefault();
       const g = e as Event & { scale: number; clientX?: number; clientY?: number };
-      zoomAt(g.clientX ?? lastClient.current.x, g.clientY ?? lastClient.current.y, g.scale / last);
+      if (overCanvas) zoomAt(g.clientX ?? lastClient.current.x, g.clientY ?? lastClient.current.y, g.scale / last);
       last = g.scale;
     };
+    const onGestureEnd = (e: Event) => e.preventDefault();
     svg.addEventListener('wheel', onWheel, { passive: false });
-    svg.addEventListener('gesturestart', onGestureStart);
-    svg.addEventListener('gesturechange', onGestureChange);
+    window.addEventListener('wheel', onWindowWheel, { passive: false });
+    document.addEventListener('gesturestart', onGestureStart, { passive: false });
+    document.addEventListener('gesturechange', onGestureChange, { passive: false });
+    document.addEventListener('gestureend', onGestureEnd, { passive: false });
     return () => {
       svg.removeEventListener('wheel', onWheel);
-      svg.removeEventListener('gesturestart', onGestureStart);
-      svg.removeEventListener('gesturechange', onGestureChange);
+      window.removeEventListener('wheel', onWindowWheel);
+      document.removeEventListener('gesturestart', onGestureStart);
+      document.removeEventListener('gesturechange', onGestureChange);
+      document.removeEventListener('gestureend', onGestureEnd);
     };
   }, []);
 

@@ -58,7 +58,7 @@ export function edgeGeometry(dv: Derived, e: Edge): EdgeGeometry | null {
   const opts = { r45: Math.max(R45, half + 8), r90: Math.max(R90, half + 8) };
   if (centre.length < 2) return { centre, lines: [], width: k * PITCH, radii: opts };
   const lines = ls.map((id, i) => {
-    const rel = (i - (k - 1) / 2) * PITCH;
+    const rel = (dv.sigma.get(A.id) ?? 1) * (i - (k - 1) / 2) * PITCH;
     const o = laneToLeftOffset(centre, A.axis, rel);
     return { id, d: roundedPath(centre, o, opts), o };
   });

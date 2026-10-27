@@ -106,6 +106,12 @@ export interface Derived {
   /** Lines present at each station, in bundle order. */
   stationLines: Map<string, string[]>;
   lineOrder: Map<string, number>;
+  /**
+   * Lane orientation per station (+1 or −1). Horizontal stations stack lanes top to
+   * bottom in bundle order; a vertical station reached through a 90° turn takes whatever
+   * orientation keeps the bundle concentric, so lines never cross at the turn.
+   */
+  sigma: Map<string, number>;
 }
 
 export function derive(doc: Doc): Derived {
@@ -124,7 +130,39 @@ export function derive(doc: Doc): Derived {
   for (const [id, set] of sets) {
     stationLines.set(id, [...set].sort((a, b) => lineOrder.get(a)! - lineOrder.get(b)!));
   }
-  return { byId, stationLines, lineOrder };
+  // Orientation: propagate across connections. Same-axis connections keep it; a
+  // horizontal/vertical connection maps it by the turn direction (−sx·sy).
+  const adj = new Map<string, { to: string; f: number }[]>();
+  for (const s of doc.stations) adj.set(s.id, []);
+  for (const e of doc.edges) {
+    const A = byId.get(e.from);
+    const B = byId.get(e.to);
+    if (!A || !B || A === B) continue;
+    let f = 1;
+    if (A.axis !== B.axis) {
+      const sx = Math.sign(B.x - A.x);
+      const sy = Math.sign(B.y - A.y);
+      if (sx && sy) f = -sx * sy;
+    }
+    adj.get(A.id)!.push({ to: B.id, f });
+    adj.get(B.id)!.push({ to: A.id, f });
+  }
+  const sigma = new Map<string, number>();
+  const roots = [...doc.stations.filter((s) => s.axis === 'h'), ...doc.stations.filter((s) => s.axis !== 'h')];
+  for (const r of roots) {
+    if (sigma.has(r.id)) continue;
+    sigma.set(r.id, 1);
+    const queue = [r.id];
+    while (queue.length) {
+      const id = queue.shift()!;
+      for (const { to, f } of adj.get(id) ?? []) {
+        if (sigma.has(to)) continue;
+        sigma.set(to, sigma.get(id)! * f);
+        queue.push(to);
+      }
+    }
+  }
+  return { byId, stationLines, lineOrder, sigma };
 }
 
 /** Offset of `line` across the flow at station `s` (0 = centre). */
@@ -132,7 +170,7 @@ export function laneOffset(d: Derived, stationId: string, lineId: string): numbe
   const ls = d.stationLines.get(stationId) ?? [];
   const i = ls.indexOf(lineId);
   if (i < 0) return 0;
-  return (i - (ls.length - 1) / 2) * PITCH;
+  return (d.sigma.get(stationId) ?? 1) * (i - (ls.length - 1) / 2) * PITCH;
 }
 
 export function lanePoint(s: Station, off: number): Pt {

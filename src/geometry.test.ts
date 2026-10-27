@@ -43,3 +43,26 @@ describe('roundedPath', () => {
     expect(d.startsWith('M 88 248 L 367.43 248 A 40 40 0 0 0 395.72 236.28')).toBe(true);
   });
 });
+
+import { derive, emptyDoc, type Station } from './model';
+
+describe('lane orientation at 90° turns', () => {
+  const st = (id: string, x: number, y: number, axis: 'h' | 'v'): Station => ({ id, x, y, label: id, kind: 'step', axis, labelSide: 'auto' });
+  it('keeps a bundle concentric when it turns down on the right and down on the left', () => {
+    const d = emptyDoc();
+    d.lines = [{ id: 'a', name: 'A', slot: 0 }, { id: 'b', name: 'B', slot: 1 }];
+    d.stations = [st('h1', 0, 0, 'h'), st('v1', 200, 120, 'v'), st('h2', 0, 240, 'h'), st('v2', -200, 360, 'v')];
+    d.edges = [
+      { id: '1', from: 'h1', to: 'v1', lines: ['a', 'b'], bend: 0.5 },
+      { id: '2', from: 'v1', to: 'h2', lines: ['a', 'b'], bend: 0.5 },
+      { id: '3', from: 'h2', to: 'v2', lines: ['a', 'b'], bend: 0.5 },
+    ];
+    const s = derive(d).sigma;
+    // right then down is a clockwise turn: the top lane ends up on the outside (east)
+    expect(s.get('h1')).toBe(1);
+    expect(s.get('v1')).toBe(-1);
+    // coming back leftwards the bundle is mirrored, then turns down on the left
+    expect(s.get('h2')).toBe(-1);
+    expect(s.get('v2')).toBe(-1);
+  });
+});

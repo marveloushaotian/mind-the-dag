@@ -13,8 +13,6 @@ export interface RenderOptions {
   /** Export mode: no editor hints, halos only inside sections. */
   exporting?: boolean;
   selected?: ReadonlySet<string>;
-  /** Station id waiting for a second click in connect mode. */
-  pending?: string | null;
 }
 
 const W = tokens.line.width;
@@ -209,7 +207,7 @@ export function docBounds(doc: Doc): Bounds | null {
   return b;
 }
 
-export function MetroMap({ doc, theme = 'light', exporting = false, selected, pending }: { doc: Doc } & RenderOptions) {
+export function MetroMap({ doc, theme = 'light', exporting = false, selected }: { doc: Doc } & RenderOptions) {
   const th = themeColours(theme);
   const dv = derive(doc);
   const tintList = tints(doc.palette, theme);
@@ -460,19 +458,13 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pe
             fill="transparent"
           />
         )}
-        {sel && !exporting && (
-          <rect
-            x={s.x - (h ? ext.along : ext.across) - 5}
-            y={s.y - (h ? ext.across : ext.along) - 5}
-            width={2 * (h ? ext.along : ext.across) + 10}
-            height={2 * (h ? ext.across : ext.along) + 10}
-            rx={8}
-            fill="none"
-            stroke={ACCENT}
-            strokeWidth={1.5}
-          />
-        )}
-        {pending === s.id && !exporting && <circle cx={s.x} cy={s.y} r={16} fill="none" stroke={ACCENT} strokeWidth={2} strokeDasharray="4 3" />}
+        {sel && !exporting && (() => {
+          // One selection frame whose size depends only on how many lines pass, not on the type.
+          const along = 16;
+          const across = 16 + (PITCH / 2) * (k - 1);
+          const [hx, hy] = h ? [along, across] : [across, along];
+          return <rect x={s.x - hx} y={s.y - hy} width={2 * hx} height={2 * hy} rx={10} fill="none" stroke={ACCENT} strokeWidth={1.5} />;
+        })()}
         {glyph}
       </g>,
     );

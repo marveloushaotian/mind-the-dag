@@ -31,7 +31,8 @@ palette, theme, legend and title block.
 | Delete | Delete the selection |
 | Arrows | Nudge selected stations |
 | Pinch, ⌘/Ctrl + scroll | Zoom around the pointer |
-| Two-finger scroll, Space-drag | Pan |
+| + · − · 0 | Zoom in · out · 100% |
+| Scroll, two-finger scroll, Space-drag | Pan (Shift + scroll pans sideways) |
 | F | Fit to screen |
 | ⌘/Ctrl Z, Shift ⌘/Ctrl Z | Undo, redo |
 | ⌘/Ctrl S, ⌘/Ctrl O | Save as .json, open |

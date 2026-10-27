@@ -4,6 +4,7 @@ import { download, ExportDialog, slug, type ExportFormat } from './exporters';
 import { IFit, IHelp, ILogo, IMinus, IPlus, IRedo, IUndo } from './icons';
 import { saveMap } from './library';
 import { importFile } from './importers';
+import { roundedPath, routeCentre } from './geometry';
 import { emptyDoc, snap, snapStation, uid, type Doc, type Station } from './model';
 import { Inspector, LeftRail, TOOLS, type Tool } from './panels';
 import { MetroMap } from './render';
@@ -27,6 +28,9 @@ const SHORTCUTS: [string, string][] = [
   ['Delete', 'Delete'],
   ['Arrows', 'Nudge'],
   ['Space-drag', 'Pan'],
+  ['Pinch · ⌘ scroll', 'Zoom'],
+  ['Scroll', 'Pan'],
+  ['+ · − · 0', 'Zoom in · out · 100%'],
   ['F', 'Fit to screen'],
   ['⌘ Z · ⇧⌘ Z', 'Undo · Redo'],
   ['⌘ S · ⌘ O', 'Save · Open'],
@@ -50,6 +54,8 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
   const [editing, setEditing] = useState<string | null>(null);
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+  const lastClient = useRef({ x: 0, y: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -183,6 +189,7 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
       if (e.key === ' ') space.current = true;
       if (e.key === 'Escape') {
         setPending(null);
+        setCursor(null);
         setSelected(new Set());
       }
       if (e.key === 'Enter') {
@@ -199,6 +206,9 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
       const toolKey = TOOLS.find((x) => x.key.toLowerCase() === e.key.toLowerCase());
       if (toolKey) setTool(toolKey.id);
       if (e.key === 'f' || e.key === 'F') fit();
+      if (e.key === '+' || e.key === '=') zoomBy(1.25);
+      if (e.key === '-' || e.key === '_') zoomBy(1 / 1.25);
+      if (e.key === '0') zoomBy(1 / view.k);
       const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
       if (arrows[e.key]) {
         const ids = [...selected].filter((s) => s.startsWith('station:')).map((s) => s.slice(8));
@@ -326,6 +336,8 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
   };
 
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    lastClient.current = { x: e.clientX, y: e.clientY };
+    if (tool === 'line' && pending && !drag) setCursor(toWorld(e.clientX, e.clientY));
     if (!drag) return;
     if (drag.kind === 'pan') {
       setView((v) => ({ ...v, x: drag.vx - (e.clientX - drag.sx) / v.k, y: drag.vy - (e.clientY - drag.sy) / v.k }));
@@ -429,12 +441,18 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
       });
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const mouseWheel = e.deltaMode !== 0 || (e.deltaX === 0 && Math.abs(e.deltaY) >= 50 && Number.isInteger(e.deltaY));
-      // Clamp so a ctrl + mouse-wheel notch zooms one comfortable step, like a pinch.
-      const dy = Math.max(-40, Math.min(40, e.deltaY));
-      if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, Math.exp(-dy * 0.01));
-      else if (mouseWheel) zoomAt(e.clientX, e.clientY, Math.exp(-dy * 0.005));
-      else setView((v) => ({ ...v, x: v.x + e.deltaX / v.k, y: v.y + e.deltaY / v.k }));
+      lastClient.current = { x: e.clientX, y: e.clientY };
+      if (e.ctrlKey || e.metaKey) {
+        // Trackpad pinch (reported as ctrl + wheel) or ⌘/Ctrl + wheel: zoom around the pointer.
+        const dy = Math.max(-10, Math.min(10, e.deltaY * (e.deltaMode === 1 ? 16 : 1)));
+        zoomAt(e.clientX, e.clientY, Math.exp(-dy * 0.02));
+        return;
+      }
+      // Plain wheel or two-finger scroll: pan only (Shift turns vertical wheel into horizontal).
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+      const dx = (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * unit;
+      const dy = (e.shiftKey && !e.deltaX ? 0 : e.deltaY) * unit;
+      setView((v) => ({ ...v, x: v.x + dx / v.k, y: v.y + dy / v.k }));
     };
     // Safari reports pinch as gesture events.
     let last = 1;
@@ -444,8 +462,8 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
     };
     const onGestureChange = (e: Event) => {
       e.preventDefault();
-      const g = e as Event & { scale: number; clientX: number; clientY: number };
-      zoomAt(g.clientX, g.clientY, g.scale / last);
+      const g = e as Event & { scale: number; clientX?: number; clientY?: number };
+      zoomAt(g.clientX ?? lastClient.current.x, g.clientY ?? lastClient.current.y, g.scale / last);
       last = g.scale;
     };
     svg.addEventListener('wheel', onWheel, { passive: false });
@@ -470,6 +488,7 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
     setEditing(null);
   };
 
+  const pendingStation = pending ? doc.stations.find((s) => s.id === pending) ?? null : null;
   const selectedSections = useMemo(() => doc.sections.filter((s) => selected.has(`section:${s.id}`)), [doc.sections, selected]);
   const empty = doc.stations.length === 0 && doc.sections.length === 0;
   const dark = theme === 'dark';
@@ -556,7 +575,13 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
             </defs>
             <rect width="100%" height="100%" fill="url(#grid)" />
             <g transform={`scale(${view.k}) translate(${-view.x} ${-view.y})`}>
-              <MetroMap doc={doc} theme={theme} selected={selected} pending={pending} />
+              <MetroMap doc={doc} theme={theme} selected={selected} />
+              {tool === 'line' && pendingStation && cursor && !drag && (
+                <g className="rubber" pointerEvents="none">
+                  <path d={roundedPath(routeCentre(pendingStation, pendingStation.axis, snapStation(cursor, 'h'), 'h', 0.5), 0, { r45: 40, r90: 32 })} />
+                  <circle cx={snapStation(cursor, 'h').x} cy={snapStation(cursor, 'h').y} r={9} />
+                </g>
+              )}
               {selectedSections.map((s) => (
                 <rect key={`h-${s.id}`} data-handle={s.id} className="handle" x={s.x + s.w - 6} y={s.y + s.h - 6} width={12} height={12} rx={3} />
               ))}

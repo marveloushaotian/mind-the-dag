@@ -197,3 +197,6 @@ button.link:hover:not(:disabled) { background: transparent; color: var(--ink); }
 .card:hover .card-actions, .card:focus-within .card-actions { display: flex; }
 .card-actions button { height: 28px; padding: 0 10px; font-size: 12px; background: #fff; border-color: var(--line); }
 .card-actions button.danger { background: #fff; }
+
+.rubber path { fill: none; stroke: var(--focus); stroke-width: 2; stroke-dasharray: 6 5; }
+.rubber circle { fill: #ffffffb0; stroke: var(--focus); stroke-width: 1.5; stroke-dasharray: 3 3; }

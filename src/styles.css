@@ -1,0 +1,19 @@
+:root {
+  --ink: #1a1d21;
+  --muted: #5c636b;
+  --line: #e6e8ea;
+  --panel: #ffffff;
+  --bg: #f5f6f7;
+  --grid: #c9ced4;
+  --accent: #24b064;
+  font-family: Inter, system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+.app { display: grid; grid-template-rows: 48px 1fr; height: 100%; }
+.topbar { display: flex; align-items: center; gap: 16px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.brand { font-weight: 700; font-size: 15px; }
+.stage { position: relative; overflow: hidden; }
+.canvas { width: 100%; height: 100%; display: block; background: #fff; }

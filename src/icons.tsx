@@ -43,9 +43,3 @@ export const IUp = make(<path {...P} d="M5 11 L9 7 L13 11" />);
 export const IDown = make(<path {...P} d="M5 7 L9 11 L13 7" />);
 export const IFile = make(<path {...P} d="M4.5 2.5 H10.5 L13.5 5.5 V15.5 H4.5 Z M10.5 2.5 V5.5 H13.5" />);
 export const IClose = make(<path {...P} d="M4.5 4.5 L13.5 13.5 M13.5 4.5 L4.5 13.5" />);
-export const ILogo = make(
-  <>
-    <path d="M1.5 11.5 H6 A3.5 3.5 0 0 0 8.5 10.5 L10 9 A3.5 3.5 0 0 1 12.5 8 H16.5" fill="none" stroke="#24B064" strokeWidth={3} />
-    <circle cx={9.2} cy={9.8} r={2.4} fill="#fff" stroke="#1A1D21" strokeWidth={1.4} />
-  </>,
-);

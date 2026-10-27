@@ -139,7 +139,7 @@ export function LeftRail({
 const KINDS: [StationKind, string, React.ReactElement][] = [
   ['step', 'Step', <circle cx={12} cy={12} r={5.5} fill="#fff" stroke="currentColor" strokeWidth={2.2} />],
   ['merge', 'Merge', <rect x={6} y={6} width={12} height={12} rx={3} fill="currentColor" />],
-  ['junction', 'Junction', <path d="M3 12 H12 M12 12 L20 6 M12 12 L20 18" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" />],
+  ['junction', 'Branch', <path d="M3 12 H12 M12 12 L20 6 M12 12 L20 18" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" />],
   ['start', 'Start', <path d="M6 6.5 H9.5 L15.5 12 L9.5 17.5 H6 Z" fill="currentColor" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" />],
   ['stop', 'Stop', <rect x={10.5} y={5} width={3.5} height={14} rx={1.2} fill="currentColor" />],
 ];

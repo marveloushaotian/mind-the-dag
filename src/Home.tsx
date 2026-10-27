@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { metagenomeExample } from './examples';
-import { IFile, ILogo, IPlus } from './icons';
+import { IFile, IPlus } from './icons';
+import { Wordmark } from './ui';
 import { importFile } from './importers';
 import { deleteMap, duplicateMap, listMaps, loadMap, type MapEntry } from './library';
 import { emptyDoc, type Doc } from './model';
@@ -83,10 +84,7 @@ export default function Home({ onOpen, onCreate }: { onOpen: (id: string) => voi
   return (
     <div className="home">
       <header className="topbar">
-        <span className="logo" aria-hidden="true">
-          <ILogo size={22} />
-        </span>
-        <span className="wordmark">mind-the-dag</span>
+        <Wordmark size={17} />
       </header>
       <main className="home-main">
         <div className="home-actions">

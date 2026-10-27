@@ -65,21 +65,61 @@ export function edgeGeometry(dv: Derived, e: Edge): EdgeGeometry | null {
   return { centre, lines, width: k * PITCH, radii: opts };
 }
 
-/** Direction (+1 / -1) of flow at a terminus, from its first connected edge. */
-function flowDir(doc: Doc, dv: Derived, s: Station): number {
-  const e = doc.edges.find((x) => x.from === s.id) ?? doc.edges.find((x) => x.to === s.id);
-  if (!e) return 1;
-  const other = dv.byId.get(e.from === s.id ? e.to : e.from);
-  if (!other) return 1;
-  const delta = s.axis === 'h' ? other.x - s.x : other.y - s.y;
-  const outward = e.from === s.id ? Math.sign(delta) : -Math.sign(delta);
-  return outward === 0 ? 1 : outward;
+/**
+ * Which sides of a station (along its flow axis) its connections leave from.
+ * A start or stop with connections on both sides is drawn as an ordinary step.
+ */
+function lineSides(doc: Doc, dv: Derived, s: Station) {
+  let neg = false;
+  let pos = false;
+  for (const e of doc.edges) {
+    if (e.from !== s.id && e.to !== s.id) continue;
+    const other = dv.byId.get(e.from === s.id ? e.to : e.from);
+    if (!other) continue;
+    const delta = s.axis === 'h' ? other.x - s.x : other.y - s.y;
+    if (delta > 0) pos = true;
+    else if (delta < 0) neg = true;
+  }
+  return { neg, pos, toLine: pos ? 1 : neg ? -1 : 1, middle: neg && pos };
+}
+
+/** Where a station's label goes, and the box it roughly covers (Inter 600, 13 px). */
+function labelPlacement(s: Station, kind: Station['kind'], n: number) {
+  const ext = markerExtent(kind, n);
+  const h = s.axis === 'h';
+  let side = s.labelSide;
+  if (side === 'auto') side = h ? 'above' : 'right';
+  const across = h ? ext.across : ext.along;
+  const along = h ? ext.along : ext.across;
+  let x = s.x;
+  let y = s.y;
+  let anchor: 'start' | 'middle' | 'end' = 'middle';
+  if (side === 'above') y = s.y - across - 10;
+  else if (side === 'below') y = s.y + across + 10 + 9.5;
+  else if (side === 'right') {
+    x = s.x + along + 10;
+    y = s.y + 4.5;
+    anchor = 'start';
+  } else {
+    x = s.x - along - 10;
+    y = s.y + 4.5;
+    anchor = 'end';
+  }
+  const w = s.label.length * 7.6;
+  const x0 = anchor === 'middle' ? x - w / 2 : anchor === 'start' ? x : x - w;
+  return { x, y, anchor, box: { x0, y0: y - 11, x1: x0 + w, y1: y + 3 } };
+}
+
+/** The glyph a station is drawn with: termini in the middle of a line become steps. */
+function drawnKind(doc: Doc, dv: Derived, s: Station): Station['kind'] {
+  if ((s.kind === 'start' || s.kind === 'stop') && lineSides(doc, dv, s).middle) return 'step';
+  return s.kind;
 }
 
 /** Extent of a station marker across the flow (half-length) and along it (half-width). */
-function markerExtent(s: Station, n: number) {
+function markerExtent(kind: Station['kind'], n: number) {
   const k = Math.max(n, 1);
-  switch (s.kind) {
+  switch (kind) {
     case 'merge':
       return { across: (22 + PITCH * (k - 1)) / 2 + 1.5, along: 11 + 1.5 };
     case 'junction':
@@ -231,12 +271,35 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
     </g>
   ));
 
+  const obstacles: { id: string; box: Box }[] = doc.stations.map((s) => {
+    const n = dv.stationLines.get(s.id)?.length ?? 0;
+    const e = markerExtent(drawnKind(doc, dv, s), n);
+    const [ax, ay] = s.axis === 'h' ? [e.along, e.across] : [e.across, e.along];
+    return { id: s.id, box: { x0: s.x - ax, y0: s.y - ay, x1: s.x + ax, y1: s.y + ay } };
+  });
+  for (const s of doc.stations)
+    if (s.label) obstacles.push({ id: `label-${s.id}`, box: labelPlacement(s, drawnKind(doc, dv, s), dv.stationLines.get(s.id)?.length ?? 0).box });
+  for (const sec of doc.sections)
+    obstacles.push({ id: `sec-${sec.id}`, box: { x0: sec.x + 12, y0: sec.y + 12, x1: sec.x + 44 + sec.name.length * 8.4, y1: sec.y + 40 } });
+
   // --- lines
   const edgeEls: ReactNode[] = [];
   const hitEls: ReactNode[] = [];
   for (const e of doc.edges) {
     const g = edgeGeometry(dv, e);
     if (!g) continue;
+    // Lines are obstacles for file icons: sample the centreline every 8 px.
+    for (let i = 1; i < g.centre.length; i++) {
+      const a = g.centre[i - 1];
+      const b = g.centre[i];
+      const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 8));
+      for (let j = 0; j <= n; j++) {
+        const px = a.x + ((b.x - a.x) * j) / n;
+        const py = a.y + ((b.y - a.y) * j) / n;
+        const r = g.width / 2;
+        obstacles.push({ id: `edge-${e.id}`, box: { x0: px - r, y0: py - r, x1: px + r, y1: py + r } });
+      }
+    }
     if (!exporting) {
       const dCentre = roundedPath(g.centre, 0, { r45: R45, r90: R90 });
       hitEls.push(
@@ -286,14 +349,6 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
   }
 
   // --- stations, labels, files
-  const obstacles: { id: string; box: Box }[] = doc.stations.map((s) => {
-    const n = dv.stationLines.get(s.id)?.length ?? 0;
-    const e = markerExtent(s, n);
-    const [ax, ay] = s.axis === 'h' ? [e.along, e.across] : [e.across, e.along];
-    return { id: s.id, box: { x0: s.x - ax, y0: s.y - ay, x1: s.x + ax, y1: s.y + ay } };
-  });
-  for (const sec of doc.sections)
-    obstacles.push({ id: `sec-${sec.id}`, box: { x0: sec.x + 12, y0: sec.y + 12, x1: sec.x + 44 + sec.name.length * 8.4, y1: sec.y + 40 } });
   const stationEls: ReactNode[] = [];
   const labelEls: ReactNode[] = [];
   const fileEls: ReactNode[] = [];
@@ -306,8 +361,10 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
     const h = s.axis === 'h';
     const key = `st-${s.id}`;
     let glyph: ReactNode = null;
-    const ext = markerExtent(s, n);
-    if (s.kind === 'step') {
+    const kind = drawnKind(doc, dv, s);
+    const sides = lineSides(doc, dv, s);
+    const ext = markerExtent(kind, n);
+    if (kind === 'step') {
       if (k === 1) {
         glyph = <circle cx={s.x} cy={s.y} r={9} fill={th.surface} stroke={stroke} strokeWidth={3} strokeDasharray={dash} />;
       } else {
@@ -326,7 +383,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
           />
         );
       }
-    } else if (s.kind === 'merge') {
+    } else if (kind === 'merge') {
       const L = 22 + PITCH * (k - 1);
       glyph = (
         <rect
@@ -340,10 +397,12 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
           strokeWidth={3}
         />
       );
-    } else if (s.kind === 'start' || s.kind === 'stop') {
+    }
+    if (s.kind === 'start' || s.kind === 'stop') {
       const H = W + PITCH * (k - 1) + 2 * tokens.terminus.overhang;
-      const dir = flowDir(doc, dv, s);
-      if (s.kind === 'start') {
+      // The flag points at the line; the bar and icons sit on the open side.
+      const dir = s.kind === 'start' ? sides.toLine : -sides.toLine;
+      if (kind === 'start') {
         const p = Math.round(H * 0.33);
         const a = H / 2 - 1.5;
         // Local frame: u along the flow, v across it.
@@ -357,7 +416,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
         const toXY = ([u, v]: [number, number]) => (h ? [s.x + dir * u, s.y + v] : [s.x + v, s.y + dir * u]);
         const d = 'M ' + pts.map((q) => toXY(q).join(' ')).join(' L ') + ' Z';
         glyph = <path d={d} fill={stroke} stroke={stroke} strokeWidth={3} strokeLinejoin="round" />;
-      } else {
+      } else if (kind === 'stop') {
         const x0 = dir > 0 ? 0 : -6;
         glyph = h ? (
           <rect x={s.x + x0} y={s.y - H / 2} width={6} height={H} rx={2} fill={stroke} />
@@ -370,9 +429,9 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
         // away from the line. If that spot collides with another station or icon, try above,
         // then below the terminus.
         const gap = tokens.terminus.iconClearance;
-        const back = s.kind === 'start' ? -dir : dir;
-        const termOuter = s.kind === 'start' ? 4.5 : 6;
-        const half = H / 2;
+        const back = -sides.toLine;
+        const termOuter = kind === 'start' ? 4.5 : kind === 'stop' ? 6 : 10.5;
+        const half = kind === 'step' ? ext.across : H / 2;
         const count = s.file.count;
         const tryPlace = (where: 'out' | 'before' | 'after') => {
           // Work in flow (u) / across (v) coordinates, then map to x/y.
@@ -380,19 +439,20 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
           let sv: number;
           let cu: number;
           let cv: number;
-          const fp = (a: number, b: number) => (h ? fileFootprint(count, a, b) : fileFootprint(count, b, a));
+          // Extra sheets always stack towards the upper right.
+          const fp = () => fileFootprint(count, 1, -1);
           if (where === 'out') {
-            su = back;
-            sv = -1;
-            const f = fp(su, sv);
+            su = h ? 1 : -1;
+            sv = h ? -1 : 1;
+            const f = fp();
             const nearU = h ? (back < 0 ? f.x1 : -f.x0) : back < 0 ? f.y1 : -f.y0;
             cu = back * (termOuter + gap + nearU);
             cv = 0;
           } else {
             const side = where === 'before' ? -1 : 1;
-            su = back;
-            sv = side;
-            const f = fp(su, sv);
+            su = h ? 1 : -1;
+            sv = h ? -1 : 1;
+            const f = fp();
             const nearV = h ? (side < 0 ? f.y1 : -f.y0) : side < 0 ? f.x1 : -f.x0;
             cu = 0;
             cv = side * (half + gap + nearV);
@@ -431,8 +491,11 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
           }
           return { cx, cy, sx, sy, box, caption };
         };
-        const options = (['out', 'before', 'after'] as const).map(tryPlace);
-        const free = options.find((o) => !obstacles.some((ob) => ob.id !== s.id && overlaps(o.box, ob.box, gap)));
+        // A terminus in the middle of a line has no open end: put the icon above or below it.
+        const options = ((sides.middle ? ['before', 'after'] : ['out', 'before', 'after']) as ('out' | 'before' | 'after')[]).map(tryPlace);
+        // Own connections only leave on the line side, so they never block the open end.
+        const own = new Set(doc.edges.filter((e) => e.from === s.id || e.to === s.id).map((e) => `edge-${e.id}`));
+        const free = options.find((o) => !obstacles.some((ob) => ob.id !== s.id && !own.has(ob.id) && overlaps(o.box, ob.box, gap)));
         const pick = free ?? options[0];
         obstacles.push({ id: `file-${s.id}`, box: pick.box });
         fileEls.push(fileIcon(pick.cx, pick.cy, s.file.ext, count, pick.sx, pick.sy, th, `file-${s.id}`));
@@ -443,8 +506,10 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
             </text>,
           );
       }
-    } else if (!exporting) {
-      glyph = <circle cx={s.x} cy={s.y} r={5} fill="none" stroke={th.muted} strokeWidth={1} strokeDasharray="2 2" />;
+    }
+    if (kind === 'junction' && !exporting) {
+      // Branch points have no marker on the map; the editor shows a small dot so they can be picked.
+      glyph = <circle cx={s.x} cy={s.y} r={3.5} fill={th.surface} stroke={th.muted} strokeWidth={1.5} />;
     }
 
     stationEls.push(
@@ -470,26 +535,9 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
     );
 
     if (s.label) {
-      let side = s.labelSide;
-      if (side === 'auto') side = h ? 'above' : 'right';
       const sec = sectionAt(doc, s);
       const haloColour = sec ? tintList[sec.tint % tintList.length] : exporting ? null : th.surface;
-      const across = h ? ext.across : ext.along;
-      const along = h ? ext.along : ext.across;
-      let x = s.x;
-      let y = s.y;
-      let anchor: 'start' | 'middle' | 'end' = 'middle';
-      if (side === 'above') y = s.y - across - 10;
-      else if (side === 'below') y = s.y + across + 10 + 9.5;
-      else if (side === 'right') {
-        x = s.x + along + 10;
-        y = s.y + 4.5;
-        anchor = 'start';
-      } else {
-        x = s.x - along - 10;
-        y = s.y + 4.5;
-        anchor = 'end';
-      }
+      const { x, y, anchor } = labelPlacement(s, kind, n);
       const common = { x, y, textAnchor: anchor, fontSize: 13, fontWeight: 600 } as const;
       // The halo is a separate stroked copy underneath (paint-order is not portable to PDF).
       if (haloColour)

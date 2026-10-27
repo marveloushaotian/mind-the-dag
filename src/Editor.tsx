@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { metagenomeExample } from './examples';
 import { download, ExportDialog, slug, type ExportFormat } from './exporters';
-import { IFit, IHelp, ILogo, IMinus, IPlus, IRedo, IUndo } from './icons';
+import { IFit, IHelp, IMinus, IPlus, IRedo, IUndo } from './icons';
 import { saveMap } from './library';
 import { importFile } from './importers';
 import { roundedPath, routeCentre } from './geometry';
@@ -10,7 +10,7 @@ import { Inspector, LeftRail, TOOLS, type Tool } from './panels';
 import { MetroMap } from './render';
 import { useDocument } from './store';
 import type { ThemeId } from './tokens';
-import { Menu, Popover } from './ui';
+import { Menu, Popover, Wordmark } from './ui';
 
 type DragState =
   | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
@@ -354,6 +354,23 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
       if (Math.hypot(dx, dy) * view.k < 3) return;
       checkpoint();
       setDrag({ ...drag, moved: true });
+      // Once the layout is being rearranged, the legend and title block stay where they are.
+      if (drag.kind === 'stations' || drag.kind === 'section' || drag.kind === 'resize') {
+        const lg = svgRef.current?.querySelector('[data-legend-origin]');
+        const tl = svgRef.current?.querySelector('[data-title-origin]');
+        if ((doc.legend.auto && lg) || (doc.titleAuto && tl))
+          preview((d) => {
+            if (d.legend.auto && lg) {
+              d.legend.x = Number(lg.getAttribute('data-x'));
+              d.legend.y = Number(lg.getAttribute('data-y'));
+              d.legend.auto = false;
+            }
+            if (d.titleAuto && tl) {
+              d.titlePos = { x: Number(tl.getAttribute('data-x')), y: Number(tl.getAttribute('data-y')) };
+              d.titleAuto = false;
+            }
+          });
+      }
     }
     if (drag.kind === 'stations') {
       const lead = doc.stations.find((s) => s.id === drag.ids[0]);
@@ -496,9 +513,10 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
   return (
     <div className={`app${dark ? ' dark' : ''}`}>
       <header className="topbar">
-        <button className="icon logo" onClick={onHome} title="All maps" aria-label="All maps">
-          <ILogo size={22} />
+        <button className="brand-btn" onClick={onHome} title="All maps" aria-label="mind-the-dag: all maps">
+          <Wordmark />
         </button>
+        <span className="divider" aria-hidden="true" />
         <input ref={titleRef} className="doc-title" value={doc.title} onChange={(e) => update((d) => void (d.title = e.target.value), 'title')} aria-label="Map title" spellCheck={false} />
         <div className="group">
           <button className="icon" onClick={undo} disabled={!store.canUndo} title="Undo (⌘Z)" aria-label="Undo">

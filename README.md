@@ -57,6 +57,12 @@ Every push to `main` is tested, built and deployed to GitHub Pages by
 - [Design spec v0.2](docs/design-spec.md) — geometry, stations, labels, palettes, export rules
 - [Design tokens](design/tokens.json) — the same values in machine-readable form
 
+## Acknowledgement
+
+The visual language is inspired by the metro-map diagrams of the
+[nf-core](https://nf-co.re) community and by the game Mini Metro. mind-the-dag is
+an independent project and is not part of, or endorsed by, nf-core.
+
 ## Licence
 
 Code: MIT. Inter font files in `public/fonts`: SIL Open Font License 1.1 (see `public/fonts/OFL.txt`).

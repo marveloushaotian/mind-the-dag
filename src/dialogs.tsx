@@ -59,6 +59,7 @@ const GROUPS: [string, [string, string[]][]][] = [
       ['End the line', ['Esc']],
       ['Rename a station', ['Double-click', '/', 'Enter']],
       ['Move a section with its stations', ['Alt', 'Drag']],
+      ['Slide a bend along a connection', ['Drag the handle']],
     ],
   ],
   [

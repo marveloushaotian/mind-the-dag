@@ -5,9 +5,9 @@ import { IFit, IHelp, IMinus, IPlus, IRedo, IUndo } from './icons';
 import { saveMap } from './library';
 import { importFile } from './importers';
 import { roundedPath, routeCentre } from './geometry';
-import { emptyDoc, snap, snapStation, uid, type Doc, type Station } from './model';
+import { derive, emptyDoc, snap, snapStation, uid, type Doc, type Station } from './model';
 import { Inspector, LeftRail, TOOLS, type Tool } from './panels';
-import { MetroMap } from './render';
+import { edgeGeometry, MetroMap } from './render';
 import { useDocument } from './store';
 import { usePanZoom } from './panzoom';
 import type { ThemeId } from './tokens';
@@ -21,6 +21,7 @@ type DragState =
   | { kind: 'resize'; id: string; start: { x: number; y: number }; orig: { w: number; h: number }; moved: boolean }
   | { kind: 'legend' | 'title'; start: { x: number; y: number }; orig: { x: number; y: number }; moved: boolean }
   | { kind: 'newSection'; start: { x: number; y: number }; cur: { x: number; y: number } }
+  | { kind: 'bend'; id: string; A: { x: number; y: number }; B: { x: number; y: number }; axis: 'h' | 'v'; moved: boolean }
   | { kind: 'marquee'; start: { x: number; y: number }; cur: { x: number; y: number }; base: Set<string> };
 
 
@@ -347,6 +348,11 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
     const h = hit(e.target);
     const handle = (e.target as Element).getAttribute?.('data-handle');
 
+    const bendHandle = (e.target as Element).getAttribute?.('data-bend');
+    if (bendHandle && bendInfo) {
+      setDrag({ kind: 'bend', id: bendHandle, A: bendInfo.A, B: bendInfo.B, axis: bendInfo.axis, moved: false });
+      return;
+    }
     if (handle) {
       const s = doc.sections.find((x) => x.id === handle);
       if (s) setDrag({ kind: 'resize', id: s.id, start: w, orig: { w: s.w, h: s.h }, moved: false });
@@ -437,6 +443,25 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
     const w = toWorld(e.clientX, e.clientY);
     if (drag.kind === 'newSection') {
       setDrag({ ...drag, cur: { x: snap(w.x), y: snap(w.y) } });
+      return;
+    }
+    if (drag.kind === 'bend') {
+      if (!drag.moved) {
+        checkpoint();
+        setDrag({ ...drag, moved: true });
+      }
+      const u = drag.axis === 'h' ? w.x : w.y;
+      const a = drag.axis === 'h' ? drag.A.x : drag.A.y;
+      const du = (drag.axis === 'h' ? drag.B.x : drag.B.y) - a;
+      const dv = Math.abs((drag.axis === 'h' ? drag.B.y : drag.B.x) - (drag.axis === 'h' ? drag.A.y : drag.A.x));
+      let bend: number;
+      if (Math.abs(du) >= dv) bend = (Math.sign(du) * (u - a) - dv / 2) / Math.max(1, Math.abs(du) - dv);
+      else bend = (u - a) / du;
+      bend = Math.min(1, Math.max(0, Math.round(bend * 100) / 100));
+      preview((d) => {
+        const ed = d.edges.find((x) => x.id === drag.id);
+        if (ed) ed.bend = bend;
+      });
       return;
     }
     if (drag.kind === 'marquee') {
@@ -561,6 +586,20 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
   };
 
   const pendingStation = pending ? doc.stations.find((s) => s.id === pending) ?? null : null;
+  // A selected connection with a diagonal (or a cross-over step) gets a handle to slide it along.
+  const bendInfo = useMemo(() => {
+    const keys = [...selected];
+    if (keys.length !== 1 || !keys[0].startsWith('edge:')) return null;
+    const e = doc.edges.find((x) => x.id === keys[0].slice(5));
+    if (!e) return null;
+    const dv = derive(doc);
+    const g = edgeGeometry(dv, e);
+    const A = dv.byId.get(e.from);
+    const B = dv.byId.get(e.to);
+    if (!g || !A || !B || A.axis !== B.axis || g.centre.length !== 4) return null;
+    const [, p1, p2] = g.centre;
+    return { id: e.id, A: g.centre[0], B: g.centre[3], axis: A.axis, at: { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 } };
+  }, [selected, doc]);
   const selectedSections = useMemo(() => doc.sections.filter((s) => selected.has(`section:${s.id}`)), [doc.sections, selected]);
   const empty = doc.stations.length === 0 && doc.sections.length === 0;
   const dark = theme === 'dark';
@@ -662,6 +701,9 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
               {selectedSections.map((s) => (
                 <rect key={`h-${s.id}`} data-handle={s.id} className="handle" x={s.x + s.w - 6} y={s.y + s.h - 6} width={12} height={12} rx={3} />
               ))}
+              {bendInfo && (
+                <circle className="bend-handle" data-bend={bendInfo.id} cx={bendInfo.at.x} cy={bendInfo.at.y} r={7 / Math.max(view.k, 0.5)} />
+              )}
               {drag?.kind === 'marquee' && (
                 <rect
                   className="marquee"

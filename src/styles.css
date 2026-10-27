@@ -229,3 +229,4 @@ kbd.key { font: inherit; font-size: 12px; font-weight: 500; color: var(--ink); m
 .badge { font-size: 11px; color: var(--muted); background: var(--hover); border-radius: 6px; padding: 3px 8px; }
 
 .marquee { fill: #1f6fae10; stroke: var(--focus); }
+.bend-handle { fill: #fff; stroke: var(--focus); stroke-width: 2; cursor: grab; }

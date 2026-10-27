@@ -9,8 +9,10 @@ import { emptyDoc, snap, snapStation, uid, type Doc, type Station } from './mode
 import { Inspector, LeftRail, TOOLS, type Tool } from './panels';
 import { MetroMap } from './render';
 import { useDocument } from './store';
+import { usePanZoom } from './panzoom';
 import type { ThemeId } from './tokens';
-import { Menu, Popover, Wordmark } from './ui';
+import { Menu, Wordmark } from './ui';
+import { ShareDialog, ShortcutsDialog } from './dialogs';
 
 type DragState =
   | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
@@ -20,28 +22,15 @@ type DragState =
   | { kind: 'legend' | 'title'; start: { x: number; y: number }; orig: { x: number; y: number }; moved: boolean }
   | { kind: 'newSection'; start: { x: number; y: number }; cur: { x: number; y: number } };
 
-const SHORTCUTS: [string, string][] = [
-  ['V · L · R', 'Select · Line · Section'],
-  ['Click, click…', 'Draw a line; Esc ends it'],
-  ['Double-click', 'Rename a station'],
-  ['Shift-click', 'Add to selection'],
-  ['Delete', 'Delete'],
-  ['Arrows', 'Nudge'],
-  ['Space-drag', 'Pan'],
-  ['Pinch · ⌘ scroll', 'Zoom'],
-  ['Scroll', 'Pan'],
-  ['+ · − · 0', 'Zoom in · out · 100%'],
-  ['F', 'Fit to screen'],
-  ['⌘ Z · ⇧⌘ Z', 'Undo · Redo'],
-  ['⌘ S · ⌘ O', 'Save · Open'],
-  ['Alt-drag section', 'Move it with its stations'],
-  ['Esc', 'End the line · deselect'],
-];
 
 export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: string; initial: Doc; onHome: () => void; onCreate: (d: Doc) => void }) {
+  const [savedDoc, setSavedDoc] = useState<Doc>(initial);
   const store = useDocument(
     () => initial,
-    (d) => saveMap(mapId, d),
+    (d) => {
+      saveMap(mapId, d);
+      setSavedDoc(d);
+    },
   );
   const { doc, update, preview, checkpoint, undo, redo } = store;
   const [tool, setToolState] = useState<Tool>('select');
@@ -54,6 +43,8 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
   const [editing, setEditing] = useState<string | null>(null);
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [help, setHelp] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const lastClient = useRef({ x: 0, y: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
@@ -117,7 +108,7 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
   // ---------------------------------------------------------------- file actions
   const newMap = () => onCreate(emptyDoc());
   const openExample = () => onCreate(metagenomeExample());
-  const save = () => download(`${slug(doc.title)}.json`, new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }));
+  const downloadMapFile = () => download(`${slug(doc.title)}.json`, new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }));
   const openFile = async (f: File) => {
     try {
       onCreate(await importFile(f));
@@ -164,8 +155,13 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === 's') {
+        // Maps save themselves; ⌘S just confirms it.
         e.preventDefault();
-        save();
+        flash('All changes are saved in this browser');
+        return;
+      }
+      if (!typing && !mod && e.key === '?') {
+        setHelp(true);
         return;
       }
       if (mod && e.key.toLowerCase() === 'o') {
@@ -173,7 +169,7 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
         fileInput.current?.click();
         return;
       }
-      if (typing || exporting) return;
+      if (typing || exporting || help || sharing) return;
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) redo();
@@ -443,55 +439,7 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
     setDrag(null);
   };
 
-  // Wheel and pinch: only the canvas zooms (never the page), around the pointer.
-  // Trackpad two-finger scroll pans; pinch (reported as ctrl+wheel) or a mouse wheel zooms.
-  useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const zoomAt = (clientX: number, clientY: number, factor: number) =>
-      setView((v) => {
-        const r = svg.getBoundingClientRect();
-        const k2 = Math.min(4, Math.max(0.25, v.k * factor));
-        const mx = v.x + (clientX - r.left) / v.k;
-        const my = v.y + (clientY - r.top) / v.k;
-        return { k: k2, x: mx - (clientX - r.left) / k2, y: my - (clientY - r.top) / k2 };
-      });
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      lastClient.current = { x: e.clientX, y: e.clientY };
-      if (e.ctrlKey || e.metaKey) {
-        // Trackpad pinch (reported as ctrl + wheel) or ⌘/Ctrl + wheel: zoom around the pointer.
-        const dy = Math.max(-10, Math.min(10, e.deltaY * (e.deltaMode === 1 ? 16 : 1)));
-        zoomAt(e.clientX, e.clientY, Math.exp(-dy * 0.02));
-        return;
-      }
-      // Plain wheel or two-finger scroll: pan only (Shift turns vertical wheel into horizontal).
-      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
-      const dx = (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * unit;
-      const dy = (e.shiftKey && !e.deltaX ? 0 : e.deltaY) * unit;
-      setView((v) => ({ ...v, x: v.x + dx / v.k, y: v.y + dy / v.k }));
-    };
-    // Safari reports pinch as gesture events.
-    let last = 1;
-    const onGestureStart = (e: Event) => {
-      e.preventDefault();
-      last = 1;
-    };
-    const onGestureChange = (e: Event) => {
-      e.preventDefault();
-      const g = e as Event & { scale: number; clientX?: number; clientY?: number };
-      zoomAt(g.clientX ?? lastClient.current.x, g.clientY ?? lastClient.current.y, g.scale / last);
-      last = g.scale;
-    };
-    svg.addEventListener('wheel', onWheel, { passive: false });
-    svg.addEventListener('gesturestart', onGestureStart);
-    svg.addEventListener('gesturechange', onGestureChange);
-    return () => {
-      svg.removeEventListener('wheel', onWheel);
-      svg.removeEventListener('gesturestart', onGestureStart);
-      svg.removeEventListener('gesturechange', onGestureChange);
-    };
-  }, []);
+  usePanZoom(svgRef, setView, lastClient);
 
   // ---------------------------------------------------------------- inline label editor
   const editStation = editing ? doc.stations.find((s) => s.id === editing) : null;
@@ -518,6 +466,9 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
         </button>
         <span className="divider" aria-hidden="true" />
         <input ref={titleRef} className="doc-title" value={doc.title} onChange={(e) => update((d) => void (d.title = e.target.value), 'title')} aria-label="Map title" spellCheck={false} />
+        <span className="save-state" title="Maps are saved automatically in this browser">
+          {savedDoc === doc ? 'Saved' : 'Saving…'}
+        </span>
         <div className="group">
           <button className="icon" onClick={undo} disabled={!store.canUndo} title="Undo (⌘Z)" aria-label="Undo">
             <IUndo />
@@ -539,8 +490,8 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
               { label: 'Example map', onSelect: openExample },
             ]}
           />
-          <button onClick={save} title="Save as .json (⌘S)">
-            Save
+          <button onClick={() => setSharing(true)} title="Share a view-only link">
+            Share
           </button>
           <Menu
             label="Export"
@@ -549,6 +500,7 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
               { label: 'SVG', onSelect: () => setExporting('svg') },
               { label: 'PDF', onSelect: () => setExporting('pdf') },
               { label: 'PNG', onSelect: () => setExporting('png') },
+              { label: 'Map file (.json)', hint: 'editable', onSelect: downloadMapFile },
             ]}
           />
           <input
@@ -645,16 +597,9 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
           )}
 
           <div className="float left-bottom">
-            <Popover label="Keyboard shortcuts" trigger={<IHelp />} placement="top">
-              <dl className="keys">
-                {SHORTCUTS.map(([k, v]) => (
-                  <div key={k}>
-                    <dt>{k}</dt>
-                    <dd>{v}</dd>
-                  </div>
-                ))}
-              </dl>
-            </Popover>
+            <button className="bare" onClick={() => setHelp(true)} aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">
+              <IHelp />
+            </button>
           </div>
           <div className="float right-bottom zoom">
             <button className="icon" onClick={() => zoomBy(1 / 1.25)} aria-label="Zoom out" title="Zoom out">
@@ -680,6 +625,8 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
         </aside>
       </div>
 
+      {help && <ShortcutsDialog onClose={() => setHelp(false)} />}
+      {sharing && <ShareDialog doc={doc} onClose={() => setSharing(false)} />}
       {exporting && <ExportDialog doc={doc} theme={theme} format={exporting} onClose={() => setExporting(null)} onDone={flash} />}
     </div>
   );

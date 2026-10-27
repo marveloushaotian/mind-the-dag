@@ -9,10 +9,12 @@ A web editor for metro-map style workflow diagrams (nf-core × Mini Metro inspir
 - Lines run at 0°, 45° and 90° with rounded, concentric bends; bundled lines stay
   12 px apart and keep one order across the map.
 - Export SVG, PDF (Inter embedded, journal scale 1 px = 0.5 pt) and PNG (300 dpi).
-- Open and save `.json` map files; import nf-metro `.mmd` files (a subset, with a
-  rough first layout to drag into shape).
-- Drafts are kept in this browser between visits. Save a `.json` file to keep a
-  map anywhere else.
+- Drafts save themselves in this browser. Export › Map file (.json) downloads an
+  editable copy to keep or send; Open reads it back, as well as nf-metro `.mmd`
+  files (a subset, with a rough first layout to drag into shape).
+- Share makes a view-only link. The map travels inside the link (compressed in
+  the URL fragment), so nothing is uploaded; whoever opens it can make a copy.
+- Where connections cross, the one carrying fewer lines gets a 4 px gap.
 
 ## Using the editor
 
@@ -35,7 +37,8 @@ palette, theme, legend and title block.
 | Scroll, two-finger scroll, Space-drag | Pan (Shift + scroll pans sideways) |
 | F | Fit to screen |
 | ⌘/Ctrl Z, Shift ⌘/Ctrl Z | Undo, redo |
-| ⌘/Ctrl S, ⌘/Ctrl O | Save as .json, open |
+| ⌘/Ctrl O | Open a file |
+| ? | Show all shortcuts |
 
 The order of the lines on the left is their order in a bundle, top to bottom,
 across the whole map.

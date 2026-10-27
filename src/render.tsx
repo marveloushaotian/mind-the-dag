@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { laneToLeftOffset, roundedPath, routeCentre, type Pt } from './geometry';
 import { derive, laneOffset, lanePoint, PITCH, type Derived, type Doc, type Edge, type Station } from './model';
 import { lineStyle, tints, tokens, type ThemeId } from './tokens';
@@ -247,6 +247,66 @@ export function docBounds(doc: Doc): Bounds | null {
   return b;
 }
 
+// ------------------------------------------------------------------ crossings (spec §8)
+interface Crossing {
+  under: string;
+  poly: Pt[];
+}
+
+/**
+ * Find where connections cross and cut a 4 px gap into the one that goes underneath.
+ * The connection carrying more lines stays on top; on a tie, the horizontal or vertical
+ * one; then the later one. Connections that share a station never count as crossing.
+ */
+export function findCrossings(doc: Doc, geoms: Map<string, EdgeGeometry>): Crossing[] {
+  const out: Crossing[] = [];
+  const list = doc.edges.filter((e) => geoms.has(e.id));
+  const drawnWidth = (g: EdgeGeometry) => (g.lines.length - 1) * PITCH + W;
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const A = list[i];
+      const B = list[j];
+      if (A.from === B.from || A.from === B.to || A.to === B.from || A.to === B.to) continue;
+      const ga = geoms.get(A.id)!;
+      const gb = geoms.get(B.id)!;
+      for (let p = 1; p < ga.centre.length; p++) {
+        for (let q = 1; q < gb.centre.length; q++) {
+          const a0 = ga.centre[p - 1];
+          const a1 = ga.centre[p];
+          const b0 = gb.centre[q - 1];
+          const b1 = gb.centre[q];
+          const r = { x: a1.x - a0.x, y: a1.y - a0.y };
+          const s = { x: b1.x - b0.x, y: b1.y - b0.y };
+          const den = r.x * s.y - r.y * s.x;
+          const la = Math.hypot(r.x, r.y);
+          const lb = Math.hypot(s.x, s.y);
+          if (!la || !lb) continue;
+          const sin = Math.abs(den) / (la * lb);
+          if (sin < 0.2) continue;
+          const t = ((b0.x - a0.x) * s.y - (b0.y - a0.y) * s.x) / den;
+          const u = ((b0.x - a0.x) * r.y - (b0.y - a0.y) * r.x) / den;
+          if (t <= 0.02 || t >= 0.98 || u <= 0.02 || u >= 0.98) continue;
+          const P = { x: a0.x + t * r.x, y: a0.y + t * r.y };
+          const axisA = Math.abs(r.x) < 1e-6 || Math.abs(r.y) < 1e-6;
+          const axisB = Math.abs(s.x) < 1e-6 || Math.abs(s.y) < 1e-6;
+          const aOnTop =
+            ga.lines.length !== gb.lines.length ? ga.lines.length > gb.lines.length : axisA !== axisB ? axisA : false;
+          const [topDir, topW, underW, under] = aOnTop
+            ? [{ x: r.x / la, y: r.y / la }, drawnWidth(ga), drawnWidth(gb), B.id]
+            : [{ x: s.x / lb, y: s.y / lb }, drawnWidth(gb), drawnWidth(ga), A.id];
+          const n = { x: -topDir.y, y: topDir.x };
+          const halfW = topW / 2 + 4;
+          const cot = Math.sqrt(Math.max(0, 1 - sin * sin)) / sin;
+          const halfL = underW / (2 * sin) + halfW * cot + 4;
+          const c = (su: number, sn: number) => ({ x: P.x + su * halfL * topDir.x + sn * halfW * n.x, y: P.y + su * halfL * topDir.y + sn * halfW * n.y });
+          out.push({ under, poly: [c(-1, -1), c(1, -1), c(1, 1), c(-1, 1)] });
+        }
+      }
+    }
+  }
+  return out;
+}
+
 export function MetroMap({ doc, theme = 'light', exporting = false, selected }: { doc: Doc } & RenderOptions) {
   const th = themeColours(theme);
   const dv = derive(doc);
@@ -283,11 +343,21 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
     obstacles.push({ id: `sec-${sec.id}`, box: { x0: sec.x + 12, y0: sec.y + 12, x1: sec.x + 44 + sec.name.length * 8.4, y1: sec.y + 40 } });
 
   // --- lines
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const geoms = new Map<string, EdgeGeometry>();
+  for (const e of doc.edges) {
+    const g = edgeGeometry(dv, e);
+    if (g) geoms.set(e.id, g);
+  }
+  const gaps = new Map<string, Pt[][]>();
+  for (const c of findCrossings(doc, geoms)) gaps.set(c.under, [...(gaps.get(c.under) ?? []), c.poly]);
+  const clipDefs: ReactNode[] = [];
   const edgeEls: ReactNode[] = [];
   const hitEls: ReactNode[] = [];
   for (const e of doc.edges) {
-    const g = edgeGeometry(dv, e);
+    const g = geoms.get(e.id);
     if (!g) continue;
+    const ownEls: ReactNode[] = [];
     // Lines are obstacles for file icons: sample the centreline every 8 px.
     for (let i = 1; i < g.centre.length; i++) {
       const a = g.centre[i - 1];
@@ -320,7 +390,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
         const ctr = g.centre;
         const base = ln.o;
         for (const s of [-1, 1]) {
-          edgeEls.push(
+          ownEls.push(
             <path
               key={`${e.id}-${ln.id}-w${s}`}
               d={roundedPath(ctr, base + s * half, g.radii)}
@@ -332,7 +402,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
           );
         }
       } else {
-        edgeEls.push(
+        ownEls.push(
           <path
             key={`${e.id}-${ln.id}`}
             d={ln.d}
@@ -346,7 +416,23 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
         );
       }
     }
+    const cut = gaps.get(e.id);
+    if (cut) {
+      const id = `${uid}-gap-${e.id}`;
+      const d = 'M -100000 -100000 H 100000 V 100000 H -100000 Z ' + cut.map((poly) => 'M ' + poly.map((q) => `${q.x.toFixed(2)} ${q.y.toFixed(2)}`).join(' L ') + ' Z').join(' ');
+      clipDefs.push(
+        <clipPath key={id} id={id}>
+          <path d={d} clipRule="evenodd" />
+        </clipPath>,
+      );
+      edgeEls.push(
+        <g key={`g-${e.id}`} clipPath={`url(#${id})`}>
+          {ownEls}
+        </g>,
+      );
+    } else edgeEls.push(<g key={`g-${e.id}`}>{ownEls}</g>);
   }
+
 
   // --- stations, labels, files
   const stationEls: ReactNode[] = [];
@@ -627,6 +713,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
 
   return (
     <g fontFamily="Inter, system-ui, sans-serif" className="metro">
+      {clipDefs.length > 0 && <defs>{clipDefs}</defs>}
       <g>{sections}</g>
       <g>{edgeEls}</g>
       <g>{hitEls}</g>

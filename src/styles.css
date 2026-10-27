@@ -206,3 +206,20 @@ button.link:hover:not(:disabled) { background: transparent; color: var(--ink); }
 .brand-btn { border: 0; background: transparent; padding: 0 8px; height: 36px; }
 .brand-btn:hover:not(:disabled) { background: var(--hover); }
 .divider { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+
+.save-state { font-size: 12px; color: var(--faint); white-space: nowrap; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; margin: -4px -6px 0 0; }
+.shortcut-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 32px; }
+.shortcut-grid section { display: flex; flex-direction: column; gap: 2px; }
+.shortcut-grid h3 { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); margin: 0 0 6px; }
+.shortcut { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 30px; font-size: 13px; }
+.keys-combo { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.keys-combo .or { font-size: 11px; color: var(--faint); margin: 0 2px; }
+kbd.key { font: inherit; font-size: 12px; font-weight: 500; color: var(--ink); min-width: 24px; height: 24px; padding: 0 7px; display: inline-flex; align-items: center; justify-content: center; background: #fff; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; }
+.share-row { display: flex; gap: 8px; }
+.share-row input { flex: 1; font-size: 12px !important; color: var(--muted) !important; }
+.modal .note { margin: 0; font-size: 12px; line-height: 17px; color: var(--muted); }
+.modal .note.warn { color: var(--danger); }
+.viewer { display: grid; grid-template-rows: 52px 1fr; height: 100%; }
+.view-title { font-size: 15px; font-weight: 600; padding: 0 4px; }
+.badge { font-size: 11px; color: var(--muted); background: var(--hover); border-radius: 6px; padding: 3px 8px; }

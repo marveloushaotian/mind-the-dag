@@ -1,8 +1,10 @@
-# mind-the-dag design spec v0.2
+# mind-the-dag design spec v0.3
 
 This is the visual language for every map that mind-the-dag draws. It mixes the nf-core metro-map style with the principles behind Mini Metro: shape tells you the role, colours are few and contrasting, the background stays quiet, and less is more.
 
 All values are machine-readable in [`design/tokens.json`](../design/tokens.json). Units are px unless stated otherwise. Everything sits on an **8 px grid**.
+
+**What changed in v0.3:** branch points (formerly "junction"); termini that orient themselves; file icons on any station, stacked up-right; automatic label sides per run; bridges at crossings; concentric bundles through 90° turns; legend and title block that follow the map until it is rearranged; full Inter 4.1 character set; the brand mark (section 14).
 
 ## 1. Geometry
 
@@ -10,6 +12,7 @@ All values are machine-readable in [`design/tokens.json`](../design/tokens.json)
 - Line width is **W = 10**. Lines in a bundle sit **12 apart** (W + 2) and turn on concentric arcs, so they never cross inside the bundle.
 - To move from one lane to the next, a line makes an S-curve over 64 px.
 - Joins are round and caps are butt.
+- Through a 90° turn, a bundle stays concentric: each station's lane order is set so the turn never crosses lines. On a return leg (a serpentine), the order is mirrored, which is what a concentric turn produces.
 
 ## 2. Stations
 
@@ -22,16 +25,20 @@ Every station has a 3 px outline, ink on white (the surface colour).
 | Merge | **solid ink** rounded square, 22 wide, r 5 |
 | Optional step | circle with a dashed outline (`4.6 2.47`) and a muted label |
 | Inactive | circle outlined in `#B8BEC4`; its line at 30 % opacity |
-| Junction | no marker |
+| Branch point (where lines split or join without a step) | no marker; the editor shows a small dot so it can be picked |
 
-The merge is solid so that it never looks like a shared capsule.
+The merge is solid so that it never looks like a shared capsule. A start or stop with connections on both sides is drawn as an ordinary step.
 
 ## 3. Termini and files
 
-- **Start flag**: a rounded pentagon in ink. The line starts underneath it.
-- **Stop bar**: 6 wide, r 2.
+- **Start flag**: a rounded pentagon in ink. The line starts underneath it, and the flag points at the side its line is on, whichever way the line was drawn.
+- **Stop bar**: 6 wide, r 2, on the open side of the line end.
 - The flag and the bar have the **same height**: they extend 6 px past the outer lines of the bundle.
-- **File icons** are 32 × 40 with r 3, a solid folded corner and a 2.5 px outline. Stacks offset each copy by 6, up to 3 copies.
+- **File icons** are 32 × 40 with r 3, a solid folded corner and a 2.5 px outline. Stacks offset each copy by 6 towards the **upper right**, up to 3 copies.
+- Any station except a branch point can carry a file icon:
+  - a start or stop puts it on its **open end**, with the station name above the icon as the heading of that file group and the caption below;
+  - other stations put the name above and the icon below (or the other way round when something is in the way).
+- An icon that would collide with a station, a label, a line, a section header or another icon moves above, then below, the station.
 - **File banner**: 40 × 14, ink background. The format is written in lower case at 10 px.
 - Icons keep **6 px clear** of any flag or bar.
 - A **side output** leaves a station on a stub that ends in a stop bar.
@@ -55,6 +62,7 @@ The merge is solid so that it never looks like a shared capsule.
 - Inter is used everywhere: in the editor and in every export.
 - PDF exports embed a subset of Inter, which the SIL OFL allows.
 - SVG exports keep live text, with an option to outline it.
+- The font files are Inter 4.1 (SIL OFL), subset to Latin, Latin Extended, Greek, punctuation, super- and subscripts, arrows and mathematical operators, so names like "α-diversity ≥ 2" export correctly. The editor and the exports use the same files.
 - Fonts are not switched per journal. A journal mode (Arimo, which has the same character widths as Arial and Helvetica) was considered and deferred. It could be added later as a token field without changing the design.
 
 ## 6. Colour roles
@@ -76,11 +84,13 @@ The merge is solid so that it never looks like a shared capsule.
 - Labels sit **10 px clear** of the line, on the **outer side of the bundle**.
 - Along one run, all labels go on one side. They change sides only at a bend or a branch.
 - A label never sits on a line. If a crossing cannot be avoided, the label gets a **4 px halo** in the colour of the surface underneath it.
+- **Automatic sides.** Stations joined by straight connections along the same axis form a run, and every label set to Auto in a run takes the same side. Horizontal runs try above, then below, and only then right or left; vertical runs try right, then left. The first side with no collision wins; otherwise the one with the fewest, where another label counts 20, a station, icon or section header 5 and a line 1. Labels with a fixed side are placed first.
 
 ## 8. Crossings and bundle order
 
-- Lines cross only at 90°, away from bends and stations.
-- The line that continues straight stays on top. The line underneath breaks with a **4 px gap** on each side (a bridge).
+- Avoid crossings; where two connections must cross, cross away from bends and stations.
+- The connection carrying **more lines stays on top**; on a tie, the horizontal or vertical one; then the later one. The one underneath breaks with a **4 px gap** on each side of the top bundle (a bridge). The gap is cut out, not painted, so it stays transparent in exports.
+- Connections that share a station never count as crossing.
 - The order of lines within a bundle is fixed once for the whole map. A line that branches off therefore already sits on the side it leaves from.
 
 ## 9. Station rhythm
@@ -102,6 +112,7 @@ The merge is solid so that it never looks like a shared capsule.
   - pipeline name in 700 · 24;
   - version · date · engine in 400 · 12;
   - an optional 32 px logo, aligned right.
+- The title block sits above the map and the legend below it, both left-aligned, until either is moved. As soon as stations or sections are moved or resized, both stay where they are.
 - **Legend**: the lines first, in bundle order from top to bottom (the same order as on the map), then a shape key: step, shared, merge, start, stop, planned.
   - The legend has no frame.
   - It goes in the largest empty corner, at least 32 px from any section.
@@ -178,15 +189,21 @@ Tints: `#F2F3F4` `#EDF5F0` `#EAECEE`
 
 Tints: `#F1F3EC` `#EFF3F7` `#F6F1E3` `#F7EEE9`
 
+## 14. Brand
+
+- **Wordmark**: "mind-the-dag" in Inter 700, tracking −0.02 em; "mind-the-" in nf-core green `#24B064`, "dag" in ink. It is the home link in the editor's top bar.
+- **Favicon**: a green tile (radius 8 on 32) with a white Inter Bold "d".
+- mind-the-dag is independent of nf-core: it never uses the nf-core logo or apple-core mark, and credits nf-core and Mini Metro as inspiration.
+
 ## Hard rules
 
 1. No sharp corners: every bend is an arc, with R45 = 40 and R90 = 32 at the centreline.
 2. Bundled lines sit 12 apart, turn on concentric arcs and keep one order across the whole map.
 3. One outline width for each kind of element: 3 px for stations, 2.5 px for icons.
-4. Circle = step, capsule = shared step, solid rounded square = merge, no marker = junction.
-5. The start flag and the stop bar are the same height; icons stay 6 px clear of both.
+4. Circle = step, capsule = shared step, solid rounded square = merge, no marker = branch point.
+5. The start flag and the stop bar are the same height and orient themselves to their line; file icons sit on the open side, 6 px clear, stacked up-right.
 6. Labels are Inter 600 · 13 in ink, 10 px clear, on one side per run, and never on a line.
-7. Lines cross only at 90°, away from bends and stations, with a 4 px bridge gap.
+7. Where connections cross, the one with fewer lines breaks with a 4 px gap each side.
 8. Stations on a run are evenly spaced, on multiples of 8 and at least 64 apart.
 9. Sections are tinted, never outlined, with at most 4 tints per map.
 10. Light grey `#B8BEC4` means inactive and is never used for a line.
@@ -195,6 +212,7 @@ Tints: `#F1F3EC` `#EFF3F7` `#F6F1E3` `#F7EEE9`
 13. Exports have a transparent background; dark mode comes from its own tokens.
 14. Inter only, everywhere; PDF exports embed it.
 15. Journal export uses 1 px = 0.5 pt, so all text is 5–7 pt; the editor warns when a map is too wide for its column.
+16. The wordmark is "mind-the-" in green and "dag" in ink; never the nf-core logo.
 
 ## Sources
 

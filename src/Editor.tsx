@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { metagenomeExample } from './examples';
 import { download, ExportDialog, slug, type ExportFormat } from './exporters';
 import { IFit, IHelp, IMinus, IPlus, IRedo, IUndo } from './icons';
-import { saveMap } from './library';
+import { isBackup, restoreBackup, saveMap } from './library';
 import { importFile } from './importers';
 import { roundedPath, routeCentre } from './geometry';
 import { derive, emptyDoc, snap, snapStation, uid, type Doc, type Station } from './model';
@@ -113,6 +113,17 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
   const downloadMapFile = () => download(`${slug(doc.title)}.json`, new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }));
   const openFile = async (f: File) => {
     try {
+      // A drafts backup restores into the library and returns to the start page.
+      try {
+        const parsed = JSON.parse(await f.text());
+        if (isBackup(parsed)) {
+          restoreBackup(parsed);
+          onHome();
+          return;
+        }
+      } catch {
+        /* not JSON: an .mmd file, handled below */
+      }
       onCreate(await importFile(f));
     } catch (err) {
       flash(`Couldn't open ${f.name}: ${(err as Error).message}`);

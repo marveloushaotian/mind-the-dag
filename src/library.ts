@@ -93,3 +93,42 @@ export function duplicateMap(id: string): string | null {
   if (!d) return null;
   return createMap({ ...structuredClone(d), title: `${d.title} copy` });
 }
+
+// ------------------------------------------------------------------ backup
+export interface Backup {
+  mindTheDagBackup: 1;
+  created: string;
+  maps: { title: string; updated: number; doc: Doc }[];
+}
+
+export function isBackup(x: unknown): x is Backup {
+  return !!x && (x as Backup).mindTheDagBackup === 1 && Array.isArray((x as Backup).maps);
+}
+
+/** Every draft in one object, newest first. */
+export function backupAll(): Backup {
+  const maps = listMaps()
+    .map((e) => ({ title: e.title, updated: e.updated, doc: loadMap(e.id) }))
+    .filter((m): m is { title: string; updated: number; doc: Doc } => !!m.doc);
+  return { mindTheDagBackup: 1, created: new Date().toISOString(), maps };
+}
+
+/** Add the maps in a backup as new drafts (never overwrites). Returns how many were added. */
+export function restoreBackup(b: Backup): number {
+  let n = 0;
+  for (const m of [...b.maps].reverse()) {
+    if (!m.doc || m.doc.version !== 1) continue;
+    createMap(m.doc);
+    n += 1;
+  }
+  return n;
+}
+
+/** Ask the browser not to evict our storage under pressure (best effort, silent). */
+export function requestPersistence(): void {
+  try {
+    void navigator.storage?.persist?.();
+  } catch {
+    /* not supported */
+  }
+}

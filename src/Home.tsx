@@ -3,7 +3,8 @@ import { metagenomeExample } from './examples';
 import { IFile, IPlus } from './icons';
 import { Wordmark } from './ui';
 import { importFile } from './importers';
-import { deleteMap, duplicateMap, listMaps, loadMap, type MapEntry } from './library';
+import { backupAll, deleteMap, duplicateMap, isBackup, listMaps, loadMap, requestPersistence, restoreBackup, type MapEntry } from './library';
+import { download } from './exporters';
 import { emptyDoc, type Doc } from './model';
 import { docBounds, MetroMap } from './render';
 
@@ -77,8 +78,12 @@ function Card({ entry, onOpen, onChange }: { entry: MapEntry; onOpen: () => void
 export default function Home({ onOpen, onCreate }: { onOpen: (id: string) => void; onCreate: (d: Doc) => void }) {
   const [maps, setMaps] = useState(listMaps);
   // Re-read after mount: an editor that just closed saves its last changes during unmount.
-  useEffect(() => setMaps(listMaps()), []);
+  useEffect(() => {
+    setMaps(listMaps());
+    requestPersistence();
+  }, []);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   return (
@@ -107,6 +112,21 @@ export default function Home({ onOpen, onCreate }: { onOpen: (id: string) => voi
               e.target.value = '';
               if (!f) return;
               try {
+                // A backup restores every draft in it; anything else opens as one new map.
+                const text = await f.text();
+                let parsed: unknown = null;
+                try {
+                  parsed = JSON.parse(text);
+                } catch {
+                  /* not JSON: .mmd or similar */
+                }
+                if (isBackup(parsed)) {
+                  const n = restoreBackup(parsed);
+                  setMaps(listMaps());
+                  setError(null);
+                  setNotice(`Restored ${n} draft${n === 1 ? '' : 's'} from ${f.name}`);
+                  return;
+                }
                 onCreate(await importFile(f));
               } catch (err) {
                 setError(`Couldn't open ${f.name}: ${(err as Error).message}`);
@@ -115,9 +135,24 @@ export default function Home({ onOpen, onCreate }: { onOpen: (id: string) => voi
           />
         </div>
         {error && <p className="home-error">{error}</p>}
+        {notice && <p className="home-notice">{notice}</p>}
         {maps.length > 0 && (
           <>
-            <h2 className="home-h">Drafts</h2>
+            <div className="home-h-row">
+              <h2 className="home-h">Drafts</h2>
+              <span className="home-hint">Kept in this browser only</span>
+              <span className="spacer" />
+              <button
+                className="small"
+                onClick={() => {
+                  const stamp = new Date().toLocaleDateString('sv'); // YYYY-MM-DD, local date
+                  download(`mind-the-dag-drafts-${stamp}.json`, new Blob([JSON.stringify(backupAll(), null, 1)], { type: 'application/json' }));
+                }}
+                title="Download every draft as one file; open it here (or on another computer) to restore"
+              >
+                Back up all drafts
+              </button>
+            </div>
             <ul className="cards">
               {maps.map((m) => (
                 <Card key={m.id} entry={m} onOpen={() => onOpen(m.id)} onChange={() => setMaps(listMaps())} />

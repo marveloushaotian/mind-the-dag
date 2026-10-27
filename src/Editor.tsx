@@ -20,7 +20,8 @@ type DragState =
   | { kind: 'section'; id: string; start: { x: number; y: number }; orig: { x: number; y: number }; members: Map<string, { x: number; y: number }>; moved: boolean }
   | { kind: 'resize'; id: string; start: { x: number; y: number }; orig: { w: number; h: number }; moved: boolean }
   | { kind: 'legend' | 'title'; start: { x: number; y: number }; orig: { x: number; y: number }; moved: boolean }
-  | { kind: 'newSection'; start: { x: number; y: number }; cur: { x: number; y: number } };
+  | { kind: 'newSection'; start: { x: number; y: number }; cur: { x: number; y: number } }
+  | { kind: 'marquee'; start: { x: number; y: number }; cur: { x: number; y: number }; base: Set<string> };
 
 
 export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: string; initial: Doc; onHome: () => void; onCreate: (d: Doc) => void }) {
@@ -136,6 +137,84 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
     return { id: uid('s'), x: pos.x, y: pos.y, label: '', kind: 'step', axis: 'h', labelSide: 'auto' };
   };
 
+  // ---------------------------------------------------------------- clipboard
+  const pasteCount = useRef(0);
+  const clipFromSelection = () => {
+    const ids = new Set([...selected].filter((k) => k.startsWith('station:')).map((k) => k.slice(8)));
+    const secIds = new Set([...selected].filter((k) => k.startsWith('section:')).map((k) => k.slice(8)));
+    const stations = doc.stations.filter((s) => ids.has(s.id));
+    const sections = doc.sections.filter((s) => secIds.has(s.id));
+    if (!stations.length && !sections.length) return null;
+    const edges = doc.edges.filter((e) => ids.has(e.from) && ids.has(e.to));
+    const used = new Set(edges.flatMap((e) => e.lines));
+    return { mindTheDag: 1, stations, sections, edges, lines: doc.lines.filter((l) => used.has(l.id)) };
+  };
+  type Clip = NonNullable<ReturnType<typeof clipFromSelection>>;
+  const clipboard = useRef<Clip | null>(null);
+  const pasteClip = (clip: Clip) => {
+    pasteCount.current += 1;
+    const off = 24 * pasteCount.current;
+    const idMap = new Map<string, string>();
+    const sel = new Set<string>();
+    update((d) => {
+      for (const l of clip.lines) if (!d.lines.some((x) => x.id === l.id)) d.lines.push({ ...l });
+      for (const s of clip.stations) {
+        const id = uid('s');
+        idMap.set(s.id, id);
+        d.stations.push({ ...structuredClone(s), id, x: s.x + off, y: s.y + off });
+        sel.add(`station:${id}`);
+      }
+      for (const e of clip.edges) d.edges.push({ ...structuredClone(e), id: uid('e'), from: idMap.get(e.from)!, to: idMap.get(e.to)! });
+      for (const s of clip.sections) {
+        const id = uid('sec');
+        d.sections.push({ ...structuredClone(s), id, x: s.x + off, y: s.y + off });
+        sel.add(`section:${id}`);
+      }
+    });
+    setSelected(sel);
+  };
+  const selectAll = () => setSelected(new Set([...doc.stations.map((s) => `station:${s.id}`), ...doc.sections.map((s) => `section:${s.id}`)]));
+
+  useEffect(() => {
+    const editingText = () => {
+      const a = document.activeElement as HTMLElement | null;
+      return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable);
+    };
+    const onCopy = (e: ClipboardEvent, cut = false) => {
+      if (editingText()) return;
+      const clip = clipFromSelection();
+      if (!clip) return;
+      e.preventDefault();
+      clipboard.current = clip;
+      pasteCount.current = 0;
+      e.clipboardData?.setData('text/plain', JSON.stringify(clip));
+      if (cut) deleteSelection();
+    };
+    const onCut = (e: ClipboardEvent) => onCopy(e, true);
+    const onPaste = (e: ClipboardEvent) => {
+      if (editingText()) return;
+      let clip = clipboard.current;
+      try {
+        const parsed = JSON.parse(e.clipboardData?.getData('text/plain') ?? '');
+        if (parsed && parsed.mindTheDag === 1) clip = parsed as Clip;
+      } catch {
+        /* not ours: fall back to the in-app clipboard */
+      }
+      if (!clip) return;
+      e.preventDefault();
+      pasteClip(clip);
+    };
+    const copyHandler = (e: Event) => onCopy(e as ClipboardEvent);
+    window.addEventListener('copy', copyHandler);
+    window.addEventListener('cut', onCut);
+    window.addEventListener('paste', onPaste);
+    return () => {
+      window.removeEventListener('copy', copyHandler);
+      window.removeEventListener('cut', onCut);
+      window.removeEventListener('paste', onPaste);
+    };
+  });
+
   const connect = (from: string, to: string) => {
     if (from === to || !active) return;
     update((d) => {
@@ -179,6 +258,20 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
       if (mod && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         redo();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        selectAll();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        const clip = clipFromSelection();
+        if (clip) {
+          pasteCount.current = 0;
+          pasteClip(clip);
+        }
         return;
       }
       if (mod) return;
@@ -285,8 +378,10 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
     }
 
     if (!h) {
-      setSelected(new Set());
-      setDrag({ kind: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y });
+      // Drag on empty canvas draws a selection box (Shift adds to the selection).
+      const base = e.shiftKey ? new Set(selected) : new Set<string>();
+      setSelected(base);
+      setDrag({ kind: 'marquee', start: w, cur: w, base });
       return;
     }
 
@@ -342,6 +437,18 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
     const w = toWorld(e.clientX, e.clientY);
     if (drag.kind === 'newSection') {
       setDrag({ ...drag, cur: { x: snap(w.x), y: snap(w.y) } });
+      return;
+    }
+    if (drag.kind === 'marquee') {
+      const x0 = Math.min(drag.start.x, w.x);
+      const x1 = Math.max(drag.start.x, w.x);
+      const y0 = Math.min(drag.start.y, w.y);
+      const y1 = Math.max(drag.start.y, w.y);
+      const sel = new Set(drag.base);
+      for (const s of doc.stations) if (s.x >= x0 && s.x <= x1 && s.y >= y0 && s.y <= y1) sel.add(`station:${s.id}`);
+      for (const s of doc.sections) if (s.x >= x0 && s.x + s.w <= x1 && s.y >= y0 && s.y + s.h <= y1) sel.add(`section:${s.id}`);
+      setSelected(sel);
+      setDrag({ ...drag, cur: w });
       return;
     }
     const dx = w.x - drag.start.x;
@@ -555,6 +662,16 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
               {selectedSections.map((s) => (
                 <rect key={`h-${s.id}`} data-handle={s.id} className="handle" x={s.x + s.w - 6} y={s.y + s.h - 6} width={12} height={12} rx={3} />
               ))}
+              {drag?.kind === 'marquee' && (
+                <rect
+                  className="marquee"
+                  x={Math.min(drag.start.x, drag.cur.x)}
+                  y={Math.min(drag.start.y, drag.cur.y)}
+                  width={Math.abs(drag.cur.x - drag.start.x)}
+                  height={Math.abs(drag.cur.y - drag.start.y)}
+                  strokeWidth={1 / view.k}
+                />
+              )}
               {drag?.kind === 'newSection' && (
                 <rect
                   x={Math.min(drag.start.x, drag.cur.x)}

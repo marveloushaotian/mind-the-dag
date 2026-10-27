@@ -66,7 +66,11 @@ const GROUPS: [string, [string, string[]][]][] = [
     [
       ['Undo', [MOD, 'Z']],
       ['Redo', ['⇧', MOD, 'Z']],
+      ['Select an area', ['Drag on empty canvas']],
       ['Add to selection', ['⇧', 'Click']],
+      ['Select all', [MOD, 'A']],
+      ['Copy, cut, paste', [MOD, 'C', '/', 'X', '/', 'V']],
+      ['Duplicate', [MOD, 'D']],
       ['Delete', ['⌫']],
       ['Nudge', ['←', '↑', '→', '↓']],
     ],

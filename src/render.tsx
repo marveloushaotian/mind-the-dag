@@ -98,7 +98,21 @@ function sectionAt(doc: Doc, p: Pt) {
   return doc.sections.find((s) => p.x >= s.x && p.x <= s.x + s.w && p.y >= s.y && p.y <= s.y + s.h);
 }
 
-function fileIcon(cx: number, cy: number, ext: string, count: number, th: Theme, key: string): ReactNode {
+/** Bounding box of a file icon stack relative to the front sheet's centre. */
+export function fileFootprint(count: number, sx: number, sy: number) {
+  const n = Math.min(Math.max(count, 1), 3) - 1;
+  const ox = 6 * n * sx;
+  const oy = 6 * n * sy;
+  const s = 1.25; // half the outline
+  return {
+    x0: Math.min(-20, -16 - s + Math.min(0, ox)),
+    x1: Math.max(20, 16 + s + Math.max(0, ox)),
+    y0: -20 - s + Math.min(0, oy),
+    y1: 20 + s + Math.max(0, oy),
+  };
+}
+
+function fileIcon(cx: number, cy: number, ext: string, count: number, sx: number, sy: number, th: Theme, key: string): ReactNode {
   const x = cx - 16;
   const y = cy - 20;
   const sheet = (dx: number, dy: number, k: string) => (
@@ -120,7 +134,8 @@ function fileIcon(cx: number, cy: number, ext: string, count: number, th: Theme,
     </g>
   );
   const sheets: ReactNode[] = [];
-  for (let i = Math.min(count, 3) - 1; i >= 1; i--) sheets.push(sheet(6 * i, -6 * i, `${key}s${i}`));
+  // Back sheets first, stepping away from the line.
+  for (let i = Math.min(count, 3) - 1; i >= 1; i--) sheets.push(sheet(6 * i * sx, 6 * i * sy, `${key}s${i}`));
   sheets.push(sheet(0, 0, `${key}s0`));
   return (
     <g key={key}>
@@ -132,6 +147,14 @@ function fileIcon(cx: number, cy: number, ext: string, count: number, th: Theme,
     </g>
   );
 }
+
+interface Box {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+const overlaps = (a: Box, b: Box, m: number) => a.x0 < b.x1 + m && b.x0 < a.x1 + m && a.y0 < b.y1 + m && b.y0 < a.y1 + m;
 
 export function MetroMap({ doc, theme = 'light', exporting = false, selected, pending }: { doc: Doc } & RenderOptions) {
   const th = themeColours(theme);
@@ -212,6 +235,14 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pe
   }
 
   // --- stations, labels, files
+  const obstacles: { id: string; box: Box }[] = doc.stations.map((s) => {
+    const n = dv.stationLines.get(s.id)?.length ?? 0;
+    const e = markerExtent(s, n);
+    const [ax, ay] = s.axis === 'h' ? [e.along, e.across] : [e.across, e.along];
+    return { id: s.id, box: { x0: s.x - ax, y0: s.y - ay, x1: s.x + ax, y1: s.y + ay } };
+  });
+  for (const sec of doc.sections)
+    obstacles.push({ id: `sec-${sec.id}`, box: { x0: sec.x + 12, y0: sec.y + 12, x1: sec.x + 44 + sec.name.length * 8.4, y1: sec.y + 40 } });
   const stationEls: ReactNode[] = [];
   const labelEls: ReactNode[] = [];
   const fileEls: ReactNode[] = [];
@@ -284,29 +315,82 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pe
         );
       }
       if (s.file) {
-        // Icon sits outside the terminus, 6 px clear of flag/bar (and of its banner).
+        // The icon sits beyond the terminus, 6 px clear of the flag or bar. Extra sheets step
+        // away from the line. If that spot collides with another station or icon, try above,
+        // then below the terminus.
         const gap = tokens.terminus.iconClearance;
         const back = s.kind === 'start' ? -dir : dir;
-        const flagOuter = s.kind === 'start' ? 4.5 : 6;
-        if (h) {
-          const cx = s.x + back * (flagOuter + gap + 20);
-          fileEls.push(fileIcon(cx, s.y, s.file.ext, s.file.count, th, `file-${s.id}`));
-          if (s.file.caption)
-            fileEls.push(
-              <text key={`cap-${s.id}`} x={cx} y={s.y + 40} textAnchor="middle" fontSize={12} fill={th.muted}>
-                {s.file.caption}
-              </text>,
-            );
-        } else {
-          const cy = s.y + back * (flagOuter + gap + 1.25 + 20);
-          fileEls.push(fileIcon(s.x, cy, s.file.ext, s.file.count, th, `file-${s.id}`));
-          if (s.file.caption)
-            fileEls.push(
-              <text key={`cap-${s.id}`} x={s.x + 30} y={cy + 4} fontSize={12} fill={th.muted}>
-                {s.file.caption}
-              </text>,
-            );
-        }
+        const termOuter = s.kind === 'start' ? 4.5 : 6;
+        const half = H / 2;
+        const count = s.file.count;
+        const tryPlace = (where: 'out' | 'before' | 'after') => {
+          // Work in flow (u) / across (v) coordinates, then map to x/y.
+          let su: number;
+          let sv: number;
+          let cu: number;
+          let cv: number;
+          const fp = (a: number, b: number) => (h ? fileFootprint(count, a, b) : fileFootprint(count, b, a));
+          if (where === 'out') {
+            su = back;
+            sv = -1;
+            const f = fp(su, sv);
+            const nearU = h ? (back < 0 ? f.x1 : -f.x0) : back < 0 ? f.y1 : -f.y0;
+            cu = back * (termOuter + gap + nearU);
+            cv = 0;
+          } else {
+            const side = where === 'before' ? -1 : 1;
+            su = back;
+            sv = side;
+            const f = fp(su, sv);
+            const nearV = h ? (side < 0 ? f.y1 : -f.y0) : side < 0 ? f.x1 : -f.x0;
+            cu = 0;
+            cv = side * (half + gap + nearV);
+          }
+          const cx = h ? s.x + cu : s.x + cv;
+          const cy = h ? s.y + cv : s.y + cu;
+          const sx = h ? su : sv;
+          const sy = h ? sv : su;
+          const f = fileFootprint(count, sx, sy);
+          const icon = { x0: cx + f.x0, y0: cy + f.y0, x1: cx + f.x1, y1: cy + f.y1 };
+          // Caption goes on the icon's outer side, across the flow where possible.
+          const cap = s.file!.caption;
+          const cw = cap ? cap.length * 6.6 : 0;
+          let caption: { x: number; y: number; anchor: 'start' | 'middle' | 'end' } | null = null;
+          let box = icon;
+          if (cap) {
+            const midX = (icon.x0 + icon.x1) / 2;
+            const midY = (icon.y0 + icon.y1) / 2;
+            let side: 'below' | 'above' | 'left' | 'right';
+            if (where === 'out') side = h ? 'below' : 'right';
+            else if (h) side = where === 'before' ? 'above' : 'below';
+            else side = where === 'before' ? 'left' : 'right';
+            if (side === 'below') {
+              caption = { x: midX, y: icon.y1 + 16, anchor: 'middle' };
+              box = { ...icon, x0: Math.min(icon.x0, midX - cw / 2), x1: Math.max(icon.x1, midX + cw / 2), y1: icon.y1 + 20 };
+            } else if (side === 'above') {
+              caption = { x: midX, y: icon.y0 - 8, anchor: 'middle' };
+              box = { ...icon, x0: Math.min(icon.x0, midX - cw / 2), x1: Math.max(icon.x1, midX + cw / 2), y0: icon.y0 - 22 };
+            } else if (side === 'right') {
+              caption = { x: icon.x1 + 8, y: midY + 4, anchor: 'start' };
+              box = { ...icon, x1: icon.x1 + 8 + cw };
+            } else {
+              caption = { x: icon.x0 - 8, y: midY + 4, anchor: 'end' };
+              box = { ...icon, x0: icon.x0 - 8 - cw };
+            }
+          }
+          return { cx, cy, sx, sy, box, caption };
+        };
+        const options = (['out', 'before', 'after'] as const).map(tryPlace);
+        const free = options.find((o) => !obstacles.some((ob) => ob.id !== s.id && overlaps(o.box, ob.box, gap)));
+        const pick = free ?? options[0];
+        obstacles.push({ id: `file-${s.id}`, box: pick.box });
+        fileEls.push(fileIcon(pick.cx, pick.cy, s.file.ext, count, pick.sx, pick.sy, th, `file-${s.id}`));
+        if (pick.caption)
+          fileEls.push(
+            <text key={`cap-${s.id}`} x={pick.caption.x} y={pick.caption.y} textAnchor={pick.caption.anchor} fontSize={12} fill={th.muted}>
+              {s.file.caption}
+            </text>,
+          );
       }
     } else if (!exporting) {
       glyph = <circle cx={s.x} cy={s.y} r={5} fill="none" stroke={th.muted} strokeWidth={1} strokeDasharray="2 2" />;
@@ -379,8 +463,15 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pe
 
   // --- legend and shape key
   const legendEls: ReactNode[] = [];
+  let legendOrigin = { x: doc.legend.x, y: doc.legend.y };
+  if (doc.legend.show && doc.legend.auto) {
+    // Below the map, aligned with its left edge.
+    const xs = [...doc.stations.map((s) => s.x - 40), ...doc.sections.map((s) => s.x)];
+    const ys = [...doc.stations.map((s) => s.y + 48), ...doc.sections.map((s) => s.y + s.h)];
+    if (xs.length) legendOrigin = { x: Math.round(Math.min(...xs) / 8) * 8, y: Math.round((Math.max(...ys) + 56) / 8) * 8 };
+  }
   if (doc.legend.show) {
-    const { x, y } = doc.legend;
+    const { x, y } = legendOrigin;
     const rows = doc.lines.filter((l) => usedLines.has(l.id));
     rows.forEach((l, i) => {
       const st = withPattern(lineStyle(doc.palette, l.slot, theme), l.pattern);
@@ -452,7 +543,9 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pe
       <g>{fileEls}</g>
       <g>{stationEls}</g>
       <g>{labelEls}</g>
-      <g data-sel="legend:legend">{legendEls}</g>
+      <g data-sel="legend:legend" data-legend-origin="" data-x={legendOrigin.x} data-y={legendOrigin.y}>
+        {legendEls}
+      </g>
       {titleEls}
     </g>
   );

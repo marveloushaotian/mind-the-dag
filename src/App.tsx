@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { metagenomeExample } from './examples';
-import { emptyDoc, snap, snapStation, uid, type Doc, type Station } from './model';
-import { Inspector, LinesPanel } from './panels';
+import { download, ExportDialog, slug, type ExportFormat } from './exporters';
+import { IFit, IHelp, ILogo, IMinus, IPlus, IRedo, IUndo } from './icons';
+import { importFile } from './importers';
+import { emptyDoc, snap, snapStation, uid, type Station } from './model';
+import { Inspector, LeftRail, TOOLS, type Tool } from './panels';
 import { MetroMap } from './render';
 import { loadStored, useDocument } from './store';
-import { ExportMenu } from './exporters';
-import { importFile } from './importers';
 import type { ThemeId } from './tokens';
-
-export type Tool = 'select' | 'station' | 'connect' | 'section';
+import { Menu, Popover } from './ui';
 
 type DragState =
   | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
@@ -18,28 +18,44 @@ type DragState =
   | { kind: 'legend' | 'title'; start: { x: number; y: number }; orig: { x: number; y: number }; moved: boolean }
   | { kind: 'newSection'; start: { x: number; y: number }; cur: { x: number; y: number } };
 
-const TOOLS: { id: Tool; label: string; key: string; hint: string }[] = [
-  { id: 'select', label: 'Select', key: 'V', hint: 'Select and drag; drag empty space to pan' },
-  { id: 'station', label: 'Station', key: 'S', hint: 'Click to add a station' },
-  { id: 'connect', label: 'Connect', key: 'C', hint: 'Click two stations to join them with the active line; click empty space to add and join a new station; Esc to stop' },
-  { id: 'section', label: 'Section', key: 'R', hint: 'Drag to draw a section' },
+const SHORTCUTS: [string, string][] = [
+  ['V · S · C · R', 'Select · Station · Connect · Section'],
+  ['Double-click', 'Rename a station'],
+  ['Shift-click', 'Add to selection'],
+  ['Delete', 'Delete'],
+  ['Arrows', 'Nudge'],
+  ['Space-drag', 'Pan'],
+  ['F', 'Fit to screen'],
+  ['⌘ Z · ⇧⌘ Z', 'Undo · Redo'],
+  ['⌘ S · ⌘ O', 'Save · Open'],
+  ['Alt-drag section', 'Move it without its stations'],
+  ['Esc', 'Stop connecting · deselect'],
 ];
 
 export default function App() {
   const store = useDocument(() => loadStored() ?? metagenomeExample());
   const { doc, update, preview, checkpoint, undo, redo, replace } = store;
-  const [tool, setTool] = useState<Tool>('select');
+  const [tool, setToolState] = useState<Tool>('select');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState<string | null>(null);
   const [activeLine, setActiveLine] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeId>('light');
   const [view, setView] = useState({ x: -40, y: -40, k: 1 });
   const [drag, setDrag] = useState<DragState | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [exporting, setExporting] = useState<ExportFormat | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const space = useRef(false);
+  const lastDown = useRef<{ key: string; at: number } | null>(null);
 
   const active = activeLine && doc.lines.some((l) => l.id === activeLine) ? activeLine : doc.lines[0]?.id ?? null;
+  const setTool = (t: Tool) => {
+    setToolState(t);
+    setPending(null);
+  };
 
   const toWorld = useCallback(
     (cx: number, cy: number) => {
@@ -50,8 +66,8 @@ export default function App() {
   );
 
   const flash = (m: string) => {
-    setMessage(m);
-    window.setTimeout(() => setMessage((cur) => (cur === m ? null : cur)), 3500);
+    setToast(m);
+    window.setTimeout(() => setToast((cur) => (cur === m ? null : cur)), 2500);
   };
 
   const fit = useCallback(() => {
@@ -60,15 +76,56 @@ export default function App() {
     if (!svg || !g) return;
     const b = g.getBBox();
     const r = svg.getBoundingClientRect();
-    if (!b.width || !b.height) return;
-    const k = Math.min(2, Math.max(0.25, Math.min((r.width - 80) / b.width, (r.height - 80) / b.height)));
+    if (!b.width || !b.height) {
+      setView({ x: -r.width / 2, y: -r.height / 2, k: 1 });
+      return;
+    }
+    const k = Math.min(1.5, Math.max(0.25, Math.min((r.width - 96) / b.width, (r.height - 96) / b.height)));
     setView({ k, x: b.x - (r.width / k - b.width) / 2, y: b.y - (r.height / k - b.height) / 2 });
   }, []);
+
+  const zoomBy = (f: number) => {
+    const r = svgRef.current!.getBoundingClientRect();
+    const k2 = Math.min(4, Math.max(0.25, view.k * f));
+    const cx = view.x + r.width / 2 / view.k;
+    const cy = view.y + r.height / 2 / view.k;
+    setView({ k: k2, x: cx - r.width / 2 / k2, y: cy - r.height / 2 / k2 });
+  };
 
   useEffect(() => {
     const t = window.setTimeout(fit, 50);
     return () => window.clearTimeout(t);
   }, [fit]);
+
+  // ---------------------------------------------------------------- file actions
+  const newMap = () => {
+    replace(emptyDoc());
+    setSelected(new Set());
+    setEditing(null);
+    setTool('station');
+    window.setTimeout(() => {
+      fit();
+      titleRef.current?.select();
+    }, 30);
+  };
+  const openExample = () => {
+    replace(metagenomeExample());
+    setSelected(new Set());
+    window.setTimeout(fit, 30);
+  };
+  const save = () => download(`${slug(doc.title)}.json`, new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }));
+  const openFile = async (f: File) => {
+    try {
+      const d = await importFile(f);
+      replace(d);
+      setSelected(new Set());
+      setPending(null);
+      window.setTimeout(fit, 30);
+      flash(`Opened ${f.name}`);
+    } catch (err) {
+      flash(`Couldn't open ${f.name}: ${(err as Error).message}`);
+    }
+  };
 
   // ---------------------------------------------------------------- editing
   const deleteSelection = useCallback(() => {
@@ -84,10 +141,9 @@ export default function App() {
     setSelected(new Set());
   }, [selected, update]);
 
-  const addStation = (p: { x: number; y: number }): Station => {
-    const n = doc.stations.length + 1;
+  const newStation = (p: { x: number; y: number }): Station => {
     const pos = snapStation(p, 'h');
-    return { id: uid('s'), x: pos.x, y: pos.y, label: `Step ${n}`, kind: 'step', axis: 'h', labelSide: 'auto' };
+    return { id: uid('s'), x: pos.x, y: pos.y, label: '', kind: 'step', axis: 'h', labelSide: 'auto' };
   };
 
   const connect = (from: string, to: string) => {
@@ -106,8 +162,19 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
       const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        save();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        fileInput.current?.click();
+        return;
+      }
+      if (typing || exporting) return;
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) redo();
@@ -125,27 +192,33 @@ export default function App() {
         setPending(null);
         setSelected(new Set());
       }
+      if (e.key === 'Enter') {
+        const only = [...selected];
+        if (only.length === 1 && only[0].startsWith('station:')) {
+          e.preventDefault();
+          setEditing(only[0].slice(8));
+        }
+      }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         deleteSelection();
       }
       const toolKey = TOOLS.find((x) => x.key.toLowerCase() === e.key.toLowerCase());
-      if (toolKey) {
-        setTool(toolKey.id);
-        setPending(null);
-      }
+      if (toolKey) setTool(toolKey.id);
       if (e.key === 'f' || e.key === 'F') fit();
-      const arrows: Record<string, [number, number]> = { ArrowLeft: [-8, 0], ArrowRight: [8, 0], ArrowUp: [0, -6], ArrowDown: [0, 6] };
+      const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
       if (arrows[e.key]) {
         const ids = [...selected].filter((s) => s.startsWith('station:')).map((s) => s.slice(8));
         if (!ids.length) return;
         e.preventDefault();
         const [dx, dy] = arrows[e.key];
         update((d) => {
-          for (const s of d.stations) if (ids.includes(s.id)) {
-            s.x += s.axis === 'h' ? dx : dx === 0 ? 0 : Math.sign(dx) * 6;
-            s.y += s.axis === 'h' ? dy : dy === 0 ? 0 : Math.sign(dy) * 8;
-          }
+          for (const s of d.stations)
+            if (ids.includes(s.id)) {
+              // One grid step along the flow, half a lane across it.
+              s.x += dx * (s.axis === 'h' ? 8 : 6);
+              s.y += dy * (s.axis === 'h' ? 6 : 8);
+            }
         });
       }
     };
@@ -158,7 +231,7 @@ export default function App() {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onUp);
     };
-  }, [undo, redo, deleteSelection, selected, update, fit]);
+  });
 
   // ---------------------------------------------------------------- pointer
   const hit = (target: EventTarget | null): { kind: string; id: string } | null => {
@@ -169,6 +242,13 @@ export default function App() {
   };
 
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    // Keep focus where we put it (e.g. the inline name editor) and close any field being typed in.
+    e.preventDefault();
+    if (editing) {
+      (document.activeElement as HTMLElement | null)?.blur();
+      return;
+    }
+    (document.activeElement as HTMLElement | null)?.blur?.();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     const w = toWorld(e.clientX, e.clientY);
     if (e.button === 1 || space.current) {
@@ -188,22 +268,25 @@ export default function App() {
       if (h?.kind === 'station') {
         if (pending && pending !== h.id) connect(pending, h.id);
         setPending(h.id);
+        setSelected(new Set([`station:${h.id}`]));
       } else if (!h || h.kind === 'section') {
-        const s = addStation(w);
+        const s = newStation(w);
         update((d) => {
           d.stations.push(s);
           if (pending && active) d.edges.push({ id: uid('e'), from: pending, to: s.id, lines: [active], bend: 0.5 });
         });
         setPending(s.id);
         setSelected(new Set([`station:${s.id}`]));
+        setEditing(s.id);
       }
       return;
     }
 
     if (tool === 'station' && (!h || h.kind === 'section')) {
-      const s = addStation(w);
+      const s = newStation(w);
       update((d) => void d.stations.push(s));
       setSelected(new Set([`station:${s.id}`]));
+      setEditing(s.id);
       return;
     }
 
@@ -220,6 +303,15 @@ export default function App() {
     }
 
     const key = `${h.kind}:${h.id}`;
+    // Double-click (two presses on the same station within 400 ms) renames it.
+    const now = performance.now();
+    if (h.kind === 'station' && lastDown.current && lastDown.current.key === key && now - lastDown.current.at < 400) {
+      lastDown.current = null;
+      setSelected(new Set([key]));
+      setEditing(h.id);
+      return;
+    }
+    lastDown.current = { key, at: now };
     let sel = selected;
     if (e.shiftKey) {
       sel = new Set(selected);
@@ -236,11 +328,13 @@ export default function App() {
       const s = doc.sections.find((x) => x.id === h.id)!;
       const members = new Map<string, { x: number; y: number }>();
       if (!e.altKey)
-        for (const st of doc.stations)
-          if (st.x >= s.x && st.x <= s.x + s.w && st.y >= s.y && st.y <= s.y + s.h) members.set(st.id, { x: st.x, y: st.y });
+        for (const st of doc.stations) if (st.x >= s.x && st.x <= s.x + s.w && st.y >= s.y && st.y <= s.y + s.h) members.set(st.id, { x: st.x, y: st.y });
       setDrag({ kind: 'section', id: s.id, start: w, orig: { x: s.x, y: s.y }, members, moved: false });
     } else if (h.kind === 'legend') {
-      setDrag({ kind: 'legend', start: w, orig: { ...doc.legend }, moved: false });
+      const g = svgRef.current?.querySelector('[data-legend-origin]');
+      const ox = Number(g?.getAttribute('data-x') ?? doc.legend.x);
+      const oy = Number(g?.getAttribute('data-y') ?? doc.legend.y);
+      setDrag({ kind: 'legend', start: w, orig: { x: ox, y: oy }, moved: false });
     } else if (h.kind === 'title') {
       setDrag({ kind: 'title', start: w, orig: { ...doc.titlePos }, moved: false });
     }
@@ -281,7 +375,7 @@ export default function App() {
         }
       });
     } else if (drag.kind === 'section') {
-      // Move by multiples of 24 vertically (lcm of 8 and 6) and 8 horizontally so members stay on their grids.
+      // 8 px across, 24 px down (common multiple of the 8 px grid and the 6 px half-lane).
       const ddx = snap(dx, 8);
       const ddy = snap(dy, 24);
       preview((d) => {
@@ -310,6 +404,7 @@ export default function App() {
         if (drag.kind === 'legend') {
           d.legend.x = p.x;
           d.legend.y = p.y;
+          d.legend.auto = false;
         } else d.titlePos = p;
       });
     }
@@ -339,77 +434,62 @@ export default function App() {
     setView({ k: k2, x: mx - (e.clientX - r.left) / k2, y: my - (e.clientY - r.top) / k2 });
   };
 
-  // ---------------------------------------------------------------- files
-  const fileInput = useRef<HTMLInputElement>(null);
-  const openFile = async (f: File) => {
-    try {
-      const d = await importFile(f);
-      replace(d);
-      setSelected(new Set());
-      setPending(null);
-      window.setTimeout(fit, 30);
-      flash(`Opened ${f.name}`);
-    } catch (err) {
-      flash(`Could not open ${f.name}: ${(err as Error).message}`);
+  // ---------------------------------------------------------------- inline label editor
+  const editStation = editing ? doc.stations.find((s) => s.id === editing) : null;
+  const finishEdit = (value: string | null) => {
+    if (editStation && value !== null && value !== editStation.label) {
+      update((d) => {
+        const s = d.stations.find((x) => x.id === editStation.id);
+        if (s) s.label = value.trim();
+      });
     }
+    setEditing(null);
   };
 
   const selectedSections = useMemo(() => doc.sections.filter((s) => selected.has(`section:${s.id}`)), [doc.sections, selected]);
+  const empty = doc.stations.length === 0 && doc.sections.length === 0;
   const dark = theme === 'dark';
-  const toolHint = TOOLS.find((t) => t.id === tool)!.hint;
 
   return (
     <div className={`app${dark ? ' dark' : ''}`}>
       <header className="topbar">
-        <span className="brand">mind-the-dag</span>
-        <div className="group" role="toolbar" aria-label="Tools">
-          {TOOLS.map((t) => (
-            <button
-              key={t.id}
-              className={tool === t.id ? 'on' : ''}
-              title={`${t.hint} (${t.key})`}
-              onClick={() => {
-                setTool(t.id);
-                setPending(null);
-              }}
-            >
-              {t.label} <kbd>{t.key}</kbd>
-            </button>
-          ))}
-        </div>
+        <span className="logo" aria-hidden="true">
+          <ILogo size={22} />
+        </span>
+        <input ref={titleRef} className="doc-title" value={doc.title} onChange={(e) => update((d) => void (d.title = e.target.value), 'title')} aria-label="Map title" spellCheck={false} />
         <div className="group">
-          <button onClick={undo} disabled={!store.canUndo} title="Undo (Ctrl/⌘ Z)">
-            Undo
+          <button className="icon" onClick={undo} disabled={!store.canUndo} title="Undo (⌘Z)" aria-label="Undo">
+            <IUndo />
           </button>
-          <button onClick={redo} disabled={!store.canRedo} title="Redo (Ctrl/⌘ Shift Z)">
-            Redo
-          </button>
-          <button onClick={fit} title="Fit to screen (F)">
-            Fit
+          <button className="icon" onClick={redo} disabled={!store.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">
+            <IRedo />
           </button>
         </div>
         <div className="spacer" />
         <div className="group">
-          <button
-            onClick={() => {
-              replace(emptyDoc());
-              setSelected(new Set());
-            }}
-          >
+          <button onClick={newMap} title="New map">
+            <IPlus size={16} />
             New
           </button>
-          <button
-            onClick={() => {
-              replace(metagenomeExample());
-              setSelected(new Set());
-              window.setTimeout(fit, 30);
-            }}
-          >
-            Example
+          <Menu
+            label="Open"
+            items={[
+              { label: 'Open file…', hint: '⌘O', onSelect: () => fileInput.current?.click() },
+              { label: 'Example map', onSelect: openExample },
+            ]}
+          />
+          <button onClick={save} title="Save as .json (⌘S)">
+            Save
           </button>
-          <button onClick={() => fileInput.current?.click()} title="Open a .json map or an nf-metro .mmd file">
-            Open…
-          </button>
+          <Menu
+            label="Export"
+            primary
+            items={[
+              { label: 'SVG', onSelect: () => setExporting('svg') },
+              { label: 'PDF', onSelect: () => setExporting('pdf') },
+              { label: 'PNG', onSelect: () => setExporting('png') },
+            ]}
+          />
           <input
             ref={fileInput}
             type="file"
@@ -421,13 +501,14 @@ export default function App() {
               e.target.value = '';
             }}
           />
-          <ExportMenu doc={doc} theme={theme} onMessage={flash} />
         </div>
       </header>
+
       <div className="body">
         <aside className="panel left">
-          <LinesPanel doc={doc} update={update} active={active} setActive={setActiveLine} theme={theme} setTheme={setTheme} />
+          <LeftRail doc={doc} update={update} tool={tool} setTool={setTool} active={active} setActive={setActiveLine} theme={theme} />
         </aside>
+
         <main
           className="stage"
           onDragOver={(e) => e.preventDefault()}
@@ -454,16 +535,7 @@ export default function App() {
             <g transform={`scale(${view.k}) translate(${-view.x} ${-view.y})`}>
               <MetroMap doc={doc} theme={theme} selected={selected} pending={pending} />
               {selectedSections.map((s) => (
-                <rect
-                  key={`h-${s.id}`}
-                  data-handle={s.id}
-                  className="handle"
-                  x={s.x + s.w - 6}
-                  y={s.y + s.h - 6}
-                  width={12}
-                  height={12}
-                  rx={3}
-                />
+                <rect key={`h-${s.id}`} data-handle={s.id} className="handle" x={s.x + s.w - 6} y={s.y + s.h - 6} width={12} height={12} rx={3} />
               ))}
               {drag?.kind === 'newSection' && (
                 <rect
@@ -477,19 +549,72 @@ export default function App() {
               )}
             </g>
           </svg>
-          <div className="statusbar">
-            <span>{toolHint}</span>
-            <span className="spacer" />
-            {message && <span className="message">{message}</span>}
-            <span>{Math.round(view.k * 100)}%</span>
+
+          {empty && (
+            <div className="empty">
+              {tool === 'station' || tool === 'connect' ? 'Click to place a station' : (
+                <>
+                  Press <kbd>S</kbd> and click to place a station
+                </>
+              )}
+            </div>
+          )}
+
+          {editStation && (
+            <input
+              key={editStation.id}
+              className="inline-edit"
+              style={{ left: (editStation.x - view.x) * view.k, top: (editStation.y - view.y) * view.k - 44 }}
+              defaultValue={editStation.label}
+              placeholder="Name"
+              autoFocus
+              onFocus={(e) => e.target.select()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') finishEdit((e.target as HTMLInputElement).value);
+                if (e.key === 'Escape') finishEdit(null);
+                e.stopPropagation();
+              }}
+              onBlur={(e) => finishEdit(e.target.value)}
+            />
+          )}
+
+          <div className="float left-bottom">
+            <Popover label="Keyboard shortcuts" trigger={<IHelp />} placement="top">
+              <dl className="keys">
+                {SHORTCUTS.map(([k, v]) => (
+                  <div key={k}>
+                    <dt>{k}</dt>
+                    <dd>{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            </Popover>
           </div>
+          <div className="float right-bottom zoom">
+            <button className="icon" onClick={() => zoomBy(1 / 1.25)} aria-label="Zoom out" title="Zoom out">
+              <IMinus size={16} />
+            </button>
+            <span>{Math.round(view.k * 100)}%</span>
+            <button className="icon" onClick={() => zoomBy(1.25)} aria-label="Zoom in" title="Zoom in">
+              <IPlus size={16} />
+            </button>
+            <button className="icon" onClick={fit} aria-label="Fit to screen" title="Fit (F)">
+              <IFit size={16} />
+            </button>
+          </div>
+          {toast && (
+            <div className="toast" role="status">
+              {toast}
+            </div>
+          )}
         </main>
+
         <aside className="panel right">
-          <Inspector doc={doc} update={update} selected={selected} theme={theme} />
+          <Inspector doc={doc} update={update} selected={selected} theme={theme} setTheme={setTheme} onDelete={deleteSelection} />
         </aside>
       </div>
+
+      {exporting && <ExportDialog doc={doc} theme={theme} format={exporting} onClose={() => setExporting(null)} onDone={flash} />}
     </div>
   );
 }
-
-export type { Doc };

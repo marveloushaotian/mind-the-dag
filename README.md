@@ -16,20 +16,23 @@ A web editor for metro-map style workflow diagrams (nf-core × Mini Metro inspir
 
 ## Using the editor
 
-| Key | Tool or action |
-|---|---|
-| V | Select: click to select, drag to move, drag empty space to pan |
-| S | Station: click to add a station |
-| C | Connect: click two stations to join them with the active line (click an existing connection's stations again to add or remove that line); click empty space to add and join a new station |
-| R | Section: drag to draw a section |
-| Delete | Remove the selection |
-| Arrows | Nudge selected stations |
-| F | Fit the map to the screen |
-| ⌘/Ctrl Z, Shift ⌘/Ctrl Z | Undo, redo |
+Tools are on the left, the selected item's settings on the right; with nothing
+selected, the right panel holds the map's palette, theme, legend and title block.
 
-The line order in the left panel is the bundle order (top to bottom) for the whole
-map. Station kind, flow direction, label side, optional/inactive and file icons
-are set in the right panel.
+| Key | Action |
+|---|---|
+| V · S · C · R | Select · Station · Connect · Section |
+| Double-click, Enter | Rename a station on the canvas |
+| Shift-click | Add to selection |
+| Delete | Delete the selection |
+| Arrows | Nudge selected stations |
+| Space-drag | Pan |
+| F | Fit to screen |
+| ⌘/Ctrl Z, Shift ⌘/Ctrl Z | Undo, redo |
+| ⌘/Ctrl S, ⌘/Ctrl O | Save, open |
+
+The order of the lines on the left is their order in a bundle, top to bottom,
+across the whole map. Connect uses the highlighted line.
 
 ## Develop
 

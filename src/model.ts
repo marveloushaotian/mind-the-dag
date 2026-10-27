@@ -66,7 +66,8 @@ export interface Doc {
   stations: Station[];
   edges: Edge[];
   sections: Section[];
-  legend: { x: number; y: number; show: boolean };
+  /** `auto` places the legend below the map until it is dragged. */
+  legend: { x: number; y: number; show: boolean; auto?: boolean };
 }
 
 export const PITCH = tokens.line.pitch;
@@ -90,7 +91,7 @@ export function emptyDoc(): Doc {
     stations: [],
     edges: [],
     sections: [],
-    legend: { x: 24, y: 400, show: true },
+    legend: { x: 24, y: 400, show: true, auto: true },
   };
 }
 

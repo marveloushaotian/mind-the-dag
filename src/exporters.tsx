@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Doc } from './model';
 import { MetroMap } from './render';
@@ -73,7 +73,9 @@ function measure(markup: string): { x: number; y: number; w: number; h: number }
   }
 }
 
-export async function buildSvg(doc: Doc, theme: ThemeId, opts: { embedFonts: boolean }): Promise<BuiltSvg> {
+export type Background = 'transparent' | 'white';
+
+export async function buildSvg(doc: Doc, theme: ThemeId, opts: { embedFonts: boolean; background?: Background }): Promise<BuiltSvg> {
   await document.fonts.ready;
   const markup = renderToStaticMarkup(<MetroMap doc={doc} theme={theme} exporting />);
   const b = measure(markup);
@@ -82,7 +84,8 @@ export async function buildSvg(doc: Doc, theme: ThemeId, opts: { embedFonts: boo
   const y = Math.floor(b.y - PAD);
   const width = Math.ceil(b.w + 2 * PAD);
   const height = Math.ceil(b.h + 2 * PAD);
-  const bg = theme === 'dark' ? `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${tokens.themes.dark.background}"/>` : '';
+  const fill = theme === 'dark' ? tokens.themes.dark.background : opts.background === 'white' ? '#FFFFFF' : null;
+  const bg = fill ? `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${fill}"/>` : '';
   const style = opts.embedFonts ? `<defs><style>${await fontFaceCss()}</style></defs>` : '';
   const title = `<title>${escapeXml(doc.title)}</title>`;
   const svg =
@@ -96,8 +99,8 @@ function escapeXml(s: string) {
 }
 
 // ------------------------------------------------------------------ png
-export async function buildPng(doc: Doc, theme: ThemeId, scale: number): Promise<Blob> {
-  const { svg, width, height } = await buildSvg(doc, theme, { embedFonts: true });
+export async function buildPng(doc: Doc, theme: ThemeId, scale: number, background: Background = 'transparent'): Promise<Blob> {
+  const { svg, width, height } = await buildSvg(doc, theme, { embedFonts: true, background });
   const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
   try {
     const img = new Image();
@@ -119,11 +122,11 @@ export async function buildPng(doc: Doc, theme: ThemeId, scale: number): Promise
 }
 
 // ------------------------------------------------------------------ pdf
-export async function buildPdf(doc: Doc, theme: ThemeId): Promise<Blob> {
+export async function buildPdf(doc: Doc, theme: ThemeId, ptPerPx = PT_PER_PX, background: Background = 'transparent'): Promise<Blob> {
   const [{ jsPDF }, { svg2pdf }] = await Promise.all([import('jspdf'), import('svg2pdf.js')]);
-  const { svg, width, height } = await buildSvg(doc, theme, { embedFonts: false });
-  const w = width * PT_PER_PX;
-  const h = height * PT_PER_PX;
+  const { svg, width, height } = await buildSvg(doc, theme, { embedFonts: false, background });
+  const w = width * ptPerPx;
+  const h = height * ptPerPx;
   const pdf = new jsPDF({ unit: 'pt', format: [w, h], orientation: w > h ? 'landscape' : 'portrait', compress: true });
   for (const wt of WEIGHTS) {
     const file = `Inter-${wt}.ttf`;
@@ -154,72 +157,98 @@ export function journalFit(widthPx: number) {
   return { mm, fits };
 }
 
-export function ExportMenu({ doc, theme, onMessage }: { doc: Doc; theme: ThemeId; onMessage: (m: string) => void }) {
-  const [open, setOpen] = useState(false);
+export type ExportFormat = 'svg' | 'pdf' | 'png';
+
+export function ExportDialog({ doc, theme, format, onClose, onDone }: { doc: Doc; theme: ThemeId; format: ExportFormat; onClose: () => void; onDone: (m: string) => void }) {
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState<'journal' | 'screen'>('journal');
+  const [pngScale, setPngScale] = useState<'300' | '2x' | '1x'>('300');
+  const [background, setBackground] = useState<Background>('transparent');
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
-    const close = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener('pointerdown', close);
-    return () => window.removeEventListener('pointerdown', close);
-  }, []);
-  useEffect(() => {
-    if (!open) return;
     buildSvg(doc, theme, { embedFonts: false })
       .then((b) => setSize({ w: b.width, h: b.height }))
       .catch(() => setSize(null));
-  }, [open, doc, theme]);
+  }, [doc, theme]);
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, [onClose]);
 
+  const ptPerPx = scale === 'journal' ? PT_PER_PX : 0.75;
+  const pngFactor = pngScale === '300' ? (300 / 72) * PT_PER_PX : pngScale === '2x' ? 2 : 1;
   const name = slug(doc.title);
-  const run = async (label: string, fn: () => Promise<void> | void) => {
-    setOpen(false);
+  let summary = '';
+  if (size) {
+    if (format === 'png') summary = `${Math.round(size.w * pngFactor)} × ${Math.round(size.h * pngFactor)} px`;
+    else {
+      const mmW = size.w * ptPerPx * MM_PER_PT;
+      const mmH = size.h * ptPerPx * MM_PER_PT;
+      summary = `${mmW.toFixed(0)} × ${mmH.toFixed(0)} mm`;
+    }
+  }
+  const fit = size && (format === 'pdf' ? scale === 'journal' : format === 'png' ? pngScale === '300' : false) ? journalFit(size.w) : null;
+
+  const go = async () => {
+    setBusy(true);
     try {
-      await fn();
-      onMessage(`Exported ${label}`);
+      if (format === 'svg') download(`${name}.svg`, new Blob([(await buildSvg(doc, theme, { embedFonts: true, background })).svg], { type: 'image/svg+xml' }));
+      if (format === 'pdf') download(`${name}.pdf`, await buildPdf(doc, theme, ptPerPx, background));
+      if (format === 'png') download(`${name}${pngScale === '2x' ? '@2x' : ''}.png`, await buildPng(doc, theme, pngFactor, background));
+      onDone(`Exported ${format.toUpperCase()}`);
+      onClose();
     } catch (err) {
-      onMessage(`Export failed: ${(err as Error).message}`);
+      onDone(`Export failed: ${(err as Error).message}`);
+      setBusy(false);
     }
   };
-  const fit = size ? journalFit(size.w) : null;
-  const dpiScale = (300 / 72) * PT_PER_PX;
+
+  const Seg = <T extends string>({ value, set, options }: { value: T; set: (v: T) => void; options: [T, string][] }) => (
+    <div className="seg">
+      {options.map(([v, l]) => (
+        <button key={v} className={value === v ? 'on' : ''} onClick={() => set(v)}>
+          {l}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
-    <div className="menu" ref={ref}>
-      <button className="primary" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        Export ▾
-      </button>
-      {open && (
-        <div className="menu-list" role="menu">
-          {size && fit && (
-            <div className={`fit${fit.fits ? '' : ' warn'}`}>
-              {size.w} × {size.h} px → {fit.mm.toFixed(0)} mm wide at 1 px = 0.5 pt.{' '}
-              {fit.fits ? `Fits a ${fit.fits}.` : 'Too wide for a 183 mm double column: consider an overview + detail split.'}
-            </div>
-          )}
-          <button role="menuitem" onClick={() => run('SVG', async () => download(`${name}.svg`, new Blob([(await buildSvg(doc, theme, { embedFonts: true })).svg], { type: 'image/svg+xml' })))}>
-            SVG <span className="sub">vector, Inter embedded</span>
+    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" role="dialog" aria-modal="true" aria-label={`Export ${format.toUpperCase()}`}>
+        <h2>Export {format.toUpperCase()}</h2>
+        {format === 'pdf' && (
+          <div className="field">
+            <span>Scale</span>
+            <Seg value={scale} set={setScale} options={[['journal', 'Journal'], ['screen', 'Screen']]} />
+          </div>
+        )}
+        {format === 'png' && (
+          <div className="field">
+            <span>Resolution</span>
+            <Seg value={pngScale} set={setPngScale} options={[['300', '300 dpi'], ['2x', '2×'], ['1x', '1×']]} />
+          </div>
+        )}
+        {theme === 'light' && (
+          <div className="field">
+            <span>Background</span>
+            <Seg value={background} set={setBackground} options={[['transparent', 'Transparent'], ['white', 'White']]} />
+          </div>
+        )}
+        {summary && (
+          <p className={`summary${fit && !fit.fits ? ' warn' : ''}`}>
+            {summary}
+            {fit && (fit.fits ? ` · fits a ${fit.fits}` : ' · wider than a double column')}
+          </p>
+        )}
+        <div className="actions">
+          <button onClick={onClose}>Cancel</button>
+          <button className="primary" onClick={go} disabled={busy}>
+            {busy ? 'Exporting…' : 'Export'}
           </button>
-          <button role="menuitem" onClick={() => run('PDF', async () => download(`${name}.pdf`, await buildPdf(doc, theme)))}>
-            PDF <span className="sub">vector, journal scale, Inter embedded</span>
-          </button>
-          <button role="menuitem" onClick={() => run('PNG', async () => download(`${name}.png`, await buildPng(doc, theme, dpiScale)))}>
-            PNG <span className="sub">300 dpi at journal scale</span>
-          </button>
-          <button role="menuitem" onClick={() => run('PNG', async () => download(`${name}@2x.png`, await buildPng(doc, theme, 2)))}>
-            PNG <span className="sub">2× for slides and web</span>
-          </button>
-          <div className="sep" />
-          <button
-            role="menuitem"
-            onClick={() => run('map file', () => download(`${name}.json`, new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' })))}
-          >
-            Map file <span className="sub">.json, opens again here</span>
-          </button>
-          <div className="label">Light theme exports with a transparent background.</div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

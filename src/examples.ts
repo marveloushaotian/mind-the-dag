@@ -8,6 +8,7 @@ export function metagenomeExample(): Doc {
     meta: 'v0.3.1 · 2026-10 · Snakemake',
     showTitle: false,
     titlePos: { x: 24, y: 40 },
+    titleAuto: true,
     palette: 'forest',
     // Bundle order, top to bottom. Slots follow the palette order by importance.
     lines: [

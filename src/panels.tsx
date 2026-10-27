@@ -1,15 +1,14 @@
-import { IConnect, IDown, IPlus, ISection, ISelect, IStation, ITrash, IUp } from './icons';
+import { IConnect, IDown, IPlus, ISection, ISelect, ITrash, IUp } from './icons';
 import { uid, type Doc, type LabelSide, type StationKind } from './model';
 import { lineStyle, paletteLines, PALETTE_IDS, tints, type ThemeId } from './tokens';
 import { Field, Popover, Seg, Toggle } from './ui';
 
 type Update = (fn: (d: Doc) => void, key?: string) => void;
-export type Tool = 'select' | 'station' | 'connect' | 'section';
+export type Tool = 'select' | 'line' | 'section';
 
 export const TOOLS: { id: Tool; label: string; key: string; Icon: () => React.ReactElement }[] = [
   { id: 'select', label: 'Select', key: 'V', Icon: () => <ISelect /> },
-  { id: 'station', label: 'Station', key: 'S', Icon: () => <IStation /> },
-  { id: 'connect', label: 'Connect', key: 'C', Icon: () => <IConnect /> },
+  { id: 'line', label: 'Line', key: 'L', Icon: () => <IConnect /> },
   { id: 'section', label: 'Section', key: 'R', Icon: () => <ISection /> },
 ];
 
@@ -137,13 +136,28 @@ export function LeftRail({
 }
 
 // ------------------------------------------------------------------ inspector
-const KINDS: [StationKind, string][] = [
-  ['step', 'Step'],
-  ['merge', 'Merge'],
-  ['junction', 'Junction'],
-  ['start', 'Start'],
-  ['stop', 'Stop'],
+const KINDS: [StationKind, string, React.ReactElement][] = [
+  ['step', 'Step', <circle cx={12} cy={12} r={5.5} fill="#fff" stroke="currentColor" strokeWidth={2.2} />],
+  ['merge', 'Merge', <rect x={6} y={6} width={12} height={12} rx={3} fill="currentColor" />],
+  ['junction', 'Junction', <path d="M3 12 H12 M12 12 L20 6 M12 12 L20 18" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" />],
+  ['start', 'Start', <path d="M6 6.5 H9.5 L15.5 12 L9.5 17.5 H6 Z" fill="currentColor" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" />],
+  ['stop', 'Stop', <rect x={10.5} y={5} width={3.5} height={14} rx={1.2} fill="currentColor" />],
 ];
+
+function KindPicker({ value, onChange }: { value: StationKind; onChange: (k: StationKind) => void }) {
+  return (
+    <div className="kinds" role="radiogroup" aria-label="Type">
+      {KINDS.map(([k, label, glyph]) => (
+        <button key={k} className={value === k ? 'on' : ''} onClick={() => onChange(k)} role="radio" aria-checked={value === k} title={label}>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+            {glyph}
+          </svg>
+          <span>{label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 const SIDES: LabelSide[] = ['auto', 'above', 'below', 'left', 'right'];
 
 export function Inspector({
@@ -229,14 +243,8 @@ export function Inspector({
             <input value={s.label} onChange={(e) => set((st) => void (st.label = e.target.value), 'label')} />
           </Field>
         )}
-        <Field label="Type">
-          <select value={s.kind} onChange={(e) => set((st) => void (st.kind = e.target.value as StationKind))}>
-            {KINDS.map(([k, l]) => (
-              <option key={k} value={k}>
-                {l}
-              </option>
-            ))}
-          </select>
+        <Field label="Type" group>
+          <KindPicker value={s.kind} onChange={(k) => set((st) => void (st.kind = k))} />
         </Field>
         <Field label="Direction" group>
           <Seg

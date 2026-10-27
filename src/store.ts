@@ -1,34 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Doc } from './model';
 
-const STORAGE_KEY = 'mind-the-dag:doc';
 const LIMIT = 200;
-
-export function loadStored(): Doc | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const d = JSON.parse(raw);
-    return d && d.version === 1 ? (d as Doc) : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveStored(doc: Doc) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
-  } catch {
-    /* storage unavailable: the in-memory document still works */
-  }
-}
 
 /**
  * Document state with undo/redo. `update(fn)` records a history step;
  * `preview(fn)` changes the document without one (for drags) and the step is
  * recorded by the `checkpoint()` taken when the drag began.
  */
-export function useDocument(initial: () => Doc) {
+export function useDocument(initial: () => Doc, onSave?: (d: Doc) => void) {
   const [doc, setDoc] = useState<Doc>(initial);
   const past = useRef<Doc[]>([]);
   const future = useRef<Doc[]>([]);
@@ -36,10 +16,21 @@ export function useDocument(initial: () => Doc) {
   const docRef = useRef(doc);
   docRef.current = doc;
 
+  const saveRef = useRef(onSave);
+  saveRef.current = onSave;
   useEffect(() => {
-    const t = setTimeout(() => saveStored(doc), 300);
+    const t = setTimeout(() => saveRef.current?.(doc), 300);
     return () => clearTimeout(t);
   }, [doc]);
+  // Flush the latest state when the editor closes or the page goes away.
+  useEffect(() => {
+    const flush = () => saveRef.current?.(docRef.current);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      flush();
+    };
+  }, []);
 
   const push = (d: Doc) => {
     past.current.push(d);

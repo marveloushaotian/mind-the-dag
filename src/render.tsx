@@ -156,6 +156,59 @@ interface Box {
 }
 const overlaps = (a: Box, b: Box, m: number) => a.x0 < b.x1 + m && b.x0 < a.x1 + m && a.y0 < b.y1 + m && b.y0 < a.y1 + m;
 
+
+// ------------------------------------------------------------------ bounds and auto placement
+export interface Bounds {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** Extent of stations (with room for labels and icons) and sections. */
+export function contentBounds(doc: Doc): Bounds | null {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const s of doc.stations) {
+    const pad = s.file ? 72 : 40;
+    xs.push(s.x - pad, s.x + pad);
+    ys.push(s.y - 40, s.y + 44);
+  }
+  for (const s of doc.sections) {
+    xs.push(s.x, s.x + s.w);
+    ys.push(s.y, s.y + s.h);
+  }
+  if (!xs.length) return null;
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+}
+
+const r8 = (v: number) => Math.round(v / 8) * 8;
+export const autoLegendPos = (b: Bounds) => ({ x: r8(b.x0), y: r8(b.y1 + 48) });
+export const autoTitlePos = (b: Bounds) => ({ x: r8(b.x0), y: r8(b.y0 - 48) });
+
+/** Everything drawn, including legend and title block (for thumbnails). */
+export function docBounds(doc: Doc): Bounds | null {
+  const c = contentBounds(doc);
+  if (!c) return null;
+  const b = { ...c };
+  if (doc.legend.show) {
+    const used = new Set(doc.edges.flatMap((e) => e.lines));
+    const rows = Math.max(1, doc.lines.filter((l) => used.has(l.id)).length, 3);
+    const p = doc.legend.auto ? autoLegendPos(c) : doc.legend;
+    b.x0 = Math.min(b.x0, p.x);
+    b.x1 = Math.max(b.x1, p.x + 360);
+    b.y0 = Math.min(b.y0, p.y - 16);
+    b.y1 = Math.max(b.y1, p.y + rows * 36);
+  }
+  if (doc.showTitle) {
+    const p = doc.titleAuto ? autoTitlePos(c) : doc.titlePos;
+    b.x0 = Math.min(b.x0, p.x);
+    b.y0 = Math.min(b.y0, p.y - 28);
+    b.x1 = Math.max(b.x1, p.x + doc.title.length * 14);
+  }
+  return b;
+}
+
 export function MetroMap({ doc, theme = 'light', exporting = false, selected, pending }: { doc: Doc } & RenderOptions) {
   const th = themeColours(theme);
   const dv = derive(doc);
@@ -463,13 +516,9 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pe
 
   // --- legend and shape key
   const legendEls: ReactNode[] = [];
+  const content = contentBounds(doc);
   let legendOrigin = { x: doc.legend.x, y: doc.legend.y };
-  if (doc.legend.show && doc.legend.auto) {
-    // Below the map, aligned with its left edge.
-    const xs = [...doc.stations.map((s) => s.x - 40), ...doc.sections.map((s) => s.x)];
-    const ys = [...doc.stations.map((s) => s.y + 48), ...doc.sections.map((s) => s.y + s.h)];
-    if (xs.length) legendOrigin = { x: Math.round(Math.min(...xs) / 8) * 8, y: Math.round((Math.max(...ys) + 56) / 8) * 8 };
-  }
+  if (doc.legend.auto && content) legendOrigin = autoLegendPos(content);
   if (doc.legend.show) {
     const { x, y } = legendOrigin;
     const rows = doc.lines.filter((l) => usedLines.has(l.id));
@@ -524,12 +573,13 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pe
     });
   }
 
+  const titleAt = doc.titleAuto && content ? autoTitlePos(content) : doc.titlePos;
   const titleEls: ReactNode = doc.showTitle ? (
-    <g data-sel="title:title">
-      <text x={doc.titlePos.x} y={doc.titlePos.y} fontSize={24} fontWeight={700} fill={th.ink}>
+    <g data-sel="title:title" data-title-origin="" data-x={titleAt.x} data-y={titleAt.y}>
+      <text x={titleAt.x} y={titleAt.y} fontSize={24} fontWeight={700} fill={th.ink}>
         {doc.title}
       </text>
-      <text x={doc.titlePos.x} y={doc.titlePos.y + 22} fontSize={12} fill={th.muted}>
+      <text x={titleAt.x} y={titleAt.y + 22} fontSize={12} fill={th.muted}>
         {doc.meta}
       </text>
     </g>

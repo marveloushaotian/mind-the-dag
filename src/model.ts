@@ -61,6 +61,8 @@ export interface Doc {
   meta: string;
   showTitle: boolean;
   titlePos: Pt;
+  /** Place the title block above the map until it is dragged. */
+  titleAuto?: boolean;
   palette: PaletteId;
   lines: Line[];
   stations: Station[];
@@ -86,6 +88,7 @@ export function emptyDoc(): Doc {
     meta: 'v0.1 · Snakemake',
     showTitle: false,
     titlePos: { x: 24, y: 48 },
+    titleAuto: true,
     palette: 'forest',
     lines: [{ id: 'l1', name: 'Line 1', slot: 0 }],
     stations: [],

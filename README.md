@@ -11,28 +11,33 @@ A web editor for metro-map style workflow diagrams (nf-core × Mini Metro inspir
 - Export SVG, PDF (Inter embedded, journal scale 1 px = 0.5 pt) and PNG (300 dpi).
 - Open and save `.json` map files; import nf-metro `.mmd` files (a subset, with a
   rough first layout to drag into shape).
-- Your current map is kept in this browser between visits. Save a `.json` file to
-  keep it anywhere else.
+- Drafts are kept in this browser between visits. Save a `.json` file to keep a
+  map anywhere else.
 
 ## Using the editor
 
-Tools are on the left, the selected item's settings on the right; with nothing
-selected, the right panel holds the map's palette, theme, legend and title block.
+The start page lists your drafts (kept in this browser); New never replaces an
+existing map. In the editor, tools are on the left and the selected item's
+settings on the right; with nothing selected, the right panel holds the map's
+palette, theme, legend and title block.
 
 | Key | Action |
 |---|---|
-| V · S · C · R | Select · Station · Connect · Section |
+| V · L · R | Select · Line · Section |
+| Click, click, click | With Line: place stations and join them with the highlighted line; click a station to continue from it; Esc ends the line |
 | Double-click, Enter | Rename a station on the canvas |
+| Alt-drag a section | Move it together with the stations inside |
 | Shift-click | Add to selection |
 | Delete | Delete the selection |
 | Arrows | Nudge selected stations |
-| Space-drag | Pan |
+| Pinch, ⌘/Ctrl + scroll | Zoom around the pointer |
+| Two-finger scroll, Space-drag | Pan |
 | F | Fit to screen |
 | ⌘/Ctrl Z, Shift ⌘/Ctrl Z | Undo, redo |
-| ⌘/Ctrl S, ⌘/Ctrl O | Save, open |
+| ⌘/Ctrl S, ⌘/Ctrl O | Save as .json, open |
 
 The order of the lines on the left is their order in a bundle, top to bottom,
-across the whole map. Connect uses the highlighted line.
+across the whole map.
 
 ## Develop
 

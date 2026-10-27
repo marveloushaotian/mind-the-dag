@@ -90,7 +90,8 @@ input[type='checkbox'] { accent-color: var(--ink); width: 15px; height: 15px; ma
 .lines { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .lines li { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 4px 0 10px; border-radius: 8px; position: relative; }
 .lines li:hover { background: var(--hover); }
-.lines li.active { background: var(--hover); box-shadow: inset 3px 0 0 var(--ink); }
+.lines li.active { background: var(--hover); }
+.lines li.active .bare-input { font-weight: 600; }
 .bare-input { border-color: transparent !important; background: transparent !important; height: 28px !important; padding: 0 4px !important; flex: 1; min-width: 0; }
 .bare-input:focus { background: #fff !important; border-color: var(--line) !important; }
 .reorder { display: none; }
@@ -166,3 +167,33 @@ input[type='checkbox'] { accent-color: var(--ink); width: 15px; height: 15px; ma
   .panel { display: none; }
   .doc-title { min-width: 0; }
 }
+
+.kinds { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.kinds button { flex-direction: column; height: 52px; gap: 2px; padding: 4px 0; border-color: transparent; background: var(--hover); color: var(--muted); }
+.kinds button span { font-size: 10px; }
+.kinds button.on { background: #fff; border-color: var(--ink); color: var(--ink); }
+.topbar .logo { width: 36px; height: 36px; }
+
+/* ---------------------------------------------------------------- start page */
+.home { min-height: 100%; background: var(--bg); }
+.home .topbar { height: 52px; gap: 10px; }
+.wordmark { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+.home-main { max-width: 1080px; margin: 0 auto; padding: 40px 24px 64px; }
+.home-actions { display: flex; align-items: center; gap: 10px; }
+button.big { height: 44px; padding: 0 18px; font-size: 14px; border-radius: 10px; gap: 8px; }
+button.link { border: 0; background: transparent; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+button.link:hover:not(:disabled) { background: transparent; color: var(--ink); }
+.home-error { color: var(--danger); margin: 12px 0 0; }
+.home-h { font-size: 13px; font-weight: 600; color: var(--muted); margin: 40px 0 12px; }
+.cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 16px; }
+.card { background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; position: relative; }
+.card:hover { border-color: #d5d9dd; box-shadow: 0 4px 16px #1a1d2112; }
+.card-main { display: flex; flex-direction: column; align-items: stretch; height: auto; padding: 0 0 12px; border: 0; border-radius: 0; background: transparent; gap: 2px; width: 100%; text-align: left; }
+.card-main:hover:not(:disabled) { background: transparent; }
+.thumb { display: block; width: 100%; aspect-ratio: 16 / 10; background: #fff; border-bottom: 1px solid var(--line); margin-bottom: 10px; padding: 8px; }
+.card-title { padding: 0 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-meta { padding: 0 14px; font-size: 12px; color: var(--faint); }
+.card-actions { position: absolute; top: 8px; right: 8px; display: none; gap: 4px; }
+.card:hover .card-actions, .card:focus-within .card-actions { display: flex; }
+.card-actions button { height: 28px; padding: 0 10px; font-size: 12px; background: #fff; border-color: var(--line); }
+.card-actions button.danger { background: #fff; }

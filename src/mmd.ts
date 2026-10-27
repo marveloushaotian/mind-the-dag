@@ -274,8 +274,9 @@ export function parseMmd(text: string, palette: PaletteId = 'forest'): Doc {
   doc.edges = edges.map((e, i) => ({ id: `e${i + 1}`, from: e.from, to: e.to, lines: [...new Set(e.lines)], bend: 0.5 }));
   if (!doc.lines.length) doc.lines.push({ id: 'default', name: 'Line 1', slot: 0 });
   const bottom = Math.max(0, ...secs.map((s) => s.y + s.h), ...stations.map((s) => s.y + 40));
-  doc.legend = { x: 32, y: r24(bottom + 72), show: true };
+  doc.legend = { x: 32, y: r24(bottom + 72), show: true, auto: true };
   doc.titlePos = { x: 32, y: 48 };
+  doc.titleAuto = true;
   doc.showTitle = !!doc.title;
   doc.meta = 'Imported from nf-metro .mmd';
   return doc;

@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { reducedMotion } from './motion';
 import { IClose } from './icons';
 import type { Doc } from './model';
 import { shareUrl } from './share';
@@ -9,22 +10,29 @@ export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(
 const MOD = isMac ? '⌘' : 'Ctrl';
 
 export function Modal({ title, onClose, children, width = 380, bare }: { title: string; onClose: () => void; children: ReactNode; width?: number; bare?: boolean }) {
+  // Closing plays a short fade-out first (skipped with "reduce motion").
+  const [closing, setClosing] = useState(false);
+  const close = useCallback(() => {
+    if (reducedMotion()) return onClose();
+    setClosing(true);
+    window.setTimeout(onClose, 140);
+  }, [onClose]);
   useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const k = (e: KeyboardEvent) => e.key === 'Escape' && close();
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
-  }, [onClose]);
+  }, [close]);
   return (
-    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={`modal-backdrop${closing ? ' closing' : ''}`} onPointerDown={(e) => e.target === e.currentTarget && close()}>
       <div className={`modal${bare ? ' bare' : ''}`} role="dialog" aria-modal="true" aria-label={title} style={{ width }}>
         {bare ? (
-          <button className="icon modal-x" onClick={onClose} aria-label="Close">
+          <button className="icon modal-x" onClick={close} aria-label="Close">
             <IClose size={16} />
           </button>
         ) : (
           <div className="modal-head">
             <h2>{title}</h2>
-            <button className="icon" onClick={onClose} aria-label="Close">
+            <button className="icon" onClick={close} aria-label="Close">
               <IClose size={16} />
             </button>
           </div>

@@ -4,6 +4,7 @@ import type { Doc } from './model';
 import { usePanZoom, type View } from './panzoom';
 import { MetroMap } from './render';
 import { Wordmark } from './ui';
+import { MORPH } from './motion';
 
 /** Read-only view of a shared map (by link or from the group library), with a way to save one's own copy. */
 export default function Viewer({
@@ -77,6 +78,7 @@ export default function Viewer({
           <svg
             ref={svgRef}
             className="canvas"
+            style={{ viewTransitionName: MORPH }}
             onPointerDown={(e) => {
               (e.currentTarget as Element).setPointerCapture(e.pointerId);
               drag.current = { sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };

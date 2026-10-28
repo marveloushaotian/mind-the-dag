@@ -4,7 +4,8 @@
  * Signed out (or without a configured server) the app keeps maps in this browser only.
  */
 import PocketBase, { ClientResponseError, LocalAuthStore, type RecordModel } from 'pocketbase';
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
+import { transition } from './motion';
 import type { Doc } from './model';
 
 export const LIBRARY_URL = ((import.meta.env.VITE_LIBRARY_URL as string | undefined) ?? '').replace(/\/+$/, '');
@@ -29,15 +30,25 @@ const toMember = (r: RecordModel | null | undefined): Member | null =>
 
 export const currentMember = (): Member | null => (pb?.authStore.isValid ? toMember(pb.authStore.record) : null);
 
+// One snapshot for the whole app, so signing in or out changes every view in a single transition.
+let memberSnapshot: Member | null = currentMember();
+const memberListeners = new Set<() => void>();
+pb?.authStore.onChange(() => {
+  const next = currentMember();
+  if (next?.id === memberSnapshot?.id && next?.name === memberSnapshot?.name && next?.email === memberSnapshot?.email) return;
+  transition(() => {
+    memberSnapshot = next;
+    memberListeners.forEach((l) => l());
+  });
+});
+const subscribeMember = (l: () => void) => {
+  memberListeners.add(l);
+  return () => void memberListeners.delete(l);
+};
+
 /** The signed-in member, re-rendering on sign-in and sign-out (also from other tabs). */
 export function useMember(): Member | null {
-  const [m, setM] = useState(currentMember);
-  useEffect(() => {
-    if (!pb) return;
-    // LocalAuthStore also follows sign-in / sign-out in other tabs.
-    return pb.authStore.onChange(() => setM(currentMember()));
-  }, []);
-  return m;
+  return useSyncExternalStore(subscribeMember, () => memberSnapshot);
 }
 
 /** Turn server errors into sentences people can act on. */
@@ -156,6 +167,11 @@ export async function listGroupMaps(groupId: string): Promise<CloudMap[]> {
     .getFullList({ filter: client().filter('group = {:g}', { g: groupId }), sort: '-updated', expand: 'owner,editedBy,group' });
   return items.map(toMap);
 }
+
+/** Maps listed on the start page, so opening one shows it at once (then refreshes). */
+const primed = new Map<string, CloudMap>();
+export const primeCloudMap = (m: CloudMap) => void primed.set(m.id, m);
+export const primedCloudMap = (id: string) => primed.get(id) ?? null;
 
 export async function getCloudMap(id: string): Promise<CloudMap> {
   return toMap(await client().collection('maps').getOne(id, { expand: 'owner,editedBy,group' }));

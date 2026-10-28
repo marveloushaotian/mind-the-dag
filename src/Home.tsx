@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { metagenomeExample } from './examples';
 import { IFile, IPlus } from './icons';
 import { Wordmark } from './ui';
@@ -37,8 +37,10 @@ import {
   type GroupMember,
   type Invitation,
   type Member,
+  primeCloudMap,
 } from './cloud';
 import { whenSynced } from './cloudSync';
+import { markOpening, transition } from './motion';
 
 const SECTION_KEY = 'mind-the-dag:section';
 
@@ -67,6 +69,8 @@ function Thumb({ doc }: { doc: Doc | null }) {
 
 /** A map card with hover actions; destructive actions ask once inline. */
 function Card({
+  id,
+  index = 0,
   doc,
   title,
   meta,
@@ -74,6 +78,8 @@ function Card({
   actions,
   danger,
 }: {
+  id: string;
+  index?: number;
   doc: Doc | null;
   title: string;
   meta: ReactNode;
@@ -92,8 +98,14 @@ function Card({
     }
   };
   return (
-    <li className="card">
-      <button className="card-main" onClick={onOpen}>
+    <li className="card" data-map-id={id} style={{ '--i': Math.min(index, 12) } as CSSProperties}>
+      <button
+        className="card-main"
+        onClick={(e) => {
+          markOpening(e.currentTarget.closest('li'), id);
+          onOpen();
+        }}
+      >
         <Thumb doc={doc} />
         <span className="card-title">{title || 'Untitled'}</span>
         <span className="card-meta">{meta}</span>
@@ -342,6 +354,8 @@ function LocalDrafts({
         {maps.map((m) => (
           <Card
             key={m.id}
+            id={m.id}
+            index={maps.indexOf(m)}
             doc={loadMap(m.id)}
             title={m.title}
             meta={ago(m.updated)}
@@ -375,6 +389,17 @@ function LocalDrafts({
 }
 
 // ------------------------------------------------------------------ signed in: cloud workspace
+const listCache = new Map<string, CloudMap[]>();
+const sideCache: { groups: Group[] | null; invites: Invitation[] } = { groups: null, invites: [] };
+let cacheOwner: string | null = null;
+/** Forget cached lists when someone else signs in on this browser. */
+function cacheFor(memberId: string) {
+  if (cacheOwner === memberId) return;
+  cacheOwner = memberId;
+  listCache.clear();
+  sideCache.groups = null;
+  sideCache.invites = [];
+}
 type Section = 'mine' | 'local' | 'invites' | `g:${string}`;
 
 function Workspace({
@@ -390,6 +415,7 @@ function Workspace({
   onCreate: (d: Doc, groupId?: string | null) => void;
   createError: string | null;
 }) {
+  cacheFor(member.id);
   const [section, setSectionState] = useState<Section>(() => {
     try {
       return (localStorage.getItem(SECTION_KEY) as Section) || 'mine';
@@ -398,17 +424,23 @@ function Workspace({
     }
   });
   const setSection = (s: Section) => {
-    setSectionState(s);
+    transition(() => {
+      setSectionState(s);
+      setMaps(listCache.get(s) ?? null);
+    });
     try {
       localStorage.setItem(SECTION_KEY, s);
     } catch {
       /* ignore */
     }
   };
-  const [groups, setGroups] = useState<Group[] | null>(null);
-  const [invites, setInvites] = useState<Invitation[]>([]);
+  const [groups, setGroupsState] = useState<Group[] | null>(sideCache.groups);
+  const [invites, setInvitesState] = useState<Invitation[]>(sideCache.invites);
+  const setGroups = (g: Group[]) => setGroupsState((sideCache.groups = g));
+  const setInvites = (i: Invitation[]) => setInvitesState((sideCache.invites = i));
   const [local, setLocal] = useState<MapEntry[]>(listMaps);
-  const [maps, setMaps] = useState<CloudMap[] | null>(null);
+  // Lists from the last visit show at once and refresh in place.
+  const [maps, setMaps] = useState<CloudMap[] | null>(() => listCache.get(section) ?? null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [newGroup, setNewGroup] = useState(false);
@@ -431,10 +463,11 @@ function Workspace({
   }, []);
   const loadMaps = useCallback(async () => {
     if (section === 'local' || section === 'invites') return;
-    setMaps(null);
     try {
       await whenSynced();
-      setMaps(section === 'mine' ? await listMyMaps() : await listGroupMaps(section.slice(2)));
+      const fresh = section === 'mine' ? await listMyMaps() : await listGroupMaps(section.slice(2));
+      listCache.set(section, fresh);
+      setMaps(fresh);
     } catch (e) {
       setError(explain(e));
       setMaps([]);
@@ -590,7 +623,15 @@ function Workspace({
 
         {(section === 'mine' || groupId) &&
           (maps === null ? (
-            <p className="home-hint pad">Loading…</p>
+            <ul className="cards" aria-busy="true" aria-label="Loading maps">
+              {[0, 1, 2].map((i) => (
+                <li key={i} className="card skeleton" style={{ '--i': i } as CSSProperties}>
+                  <div className="thumb" />
+                  <span className="sk-line" />
+                  <span className="sk-line short" />
+                </li>
+              ))}
+            </ul>
           ) : maps.length === 0 ? (
             <p className="home-hint pad">
               {section === 'mine' ? 'No maps yet. Start a new one above.' : 'No maps in this group yet. Make one here, or copy one in from My maps.'}
@@ -604,6 +645,8 @@ function Workspace({
                 return (
                   <Card
                     key={m.id}
+                    id={m.id}
+                    index={maps.indexOf(m)}
                     doc={m.doc}
                     title={m.title}
                     meta={
@@ -616,7 +659,10 @@ function Workspace({
                         `edited ${edited}`
                       )
                     }
-                    onOpen={() => onOpenCloud(m.id)}
+                    onOpen={() => {
+                      primeCloudMap(m);
+                      onOpenCloud(m.id);
+                    }}
                     actions={
                       groupId
                         ? [

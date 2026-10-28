@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Editor from './Editor';
-import { createCloudMap, explain, getCloudMap, updatedMs, type CloudMap } from './cloud';
+import { createCloudMap, explain, getCloudMap, primedCloudMap, updatedMs, type CloudMap } from './cloud';
 import { pendingEdits, useCloudSync } from './cloudSync';
 import type { Doc } from './model';
 import { Wordmark } from './ui';
@@ -9,12 +9,20 @@ const timeOf = (s: string) => new Date(updatedMs(s)).toLocaleTimeString([], { ho
 
 /** Opens a map from the cloud workspace (My maps or a group) and keeps it saved there. */
 export default function CloudEditor({ id, onHome, onCreate, onOpen }: { id: string; onHome: () => void; onCreate: (d: Doc) => void; onOpen: (id: string) => void }) {
-  const [map, setMap] = useState<CloudMap | null>(null);
+  // A map opened from the start page shows at once; the server copy replaces it if it is newer.
+  const [map, setMap] = useState<CloudMap | null>(() => primedCloudMap(id));
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    setMap(null);
     setError(null);
-    getCloudMap(id).then(setMap, (e) => setError(explain(e)));
+    getCloudMap(id).then(
+      (fresh) =>
+        setMap((cur) => {
+          if (!cur) return fresh;
+          if (cur.updated === fresh.updated || pendingEdits(id, cur.updated)) return cur;
+          return fresh;
+        }),
+      (e) => setError(explain(e)),
+    );
   }, [id]);
   if (error)
     return (
@@ -24,14 +32,8 @@ export default function CloudEditor({ id, onHome, onCreate, onOpen }: { id: stri
         <button onClick={onHome}>Back to all maps</button>
       </div>
     );
-  if (!map)
-    return (
-      <div className="loading-page">
-        <Wordmark size={17} />
-        <p className="muted">Opening…</p>
-      </div>
-    );
-  return <Synced key={map.id} map={map} onHome={onHome} onCreate={onCreate} onOpen={onOpen} />;
+  if (!map) return <EditorSkeleton />;
+  return <Synced key={`${map.id}:${map.updated}`} map={map} onHome={onHome} onCreate={onCreate} onOpen={onOpen} />;
 }
 
 function Synced({ map, onHome, onCreate, onOpen }: { map: CloudMap; onHome: () => void; onCreate: (d: Doc) => void; onOpen: (id: string) => void }) {
@@ -133,7 +135,7 @@ function Synced({ map, onHome, onCreate, onOpen }: { map: CloudMap; onHome: () =
       }}
       place={{ kind: 'cloud', mapId: map.id, groupId: map.groupId, groupName: map.groupName }}
       saveState={
-        <span className={`save-state${sync.state === 'conflict' || sync.state === 'offline' ? ' warn' : ''}`} title={map.groupId ? 'Saved to the group' : 'Saved to My maps'}>
+        <span key={sync.state} className={`save-state${sync.state === 'conflict' || sync.state === 'offline' ? ' warn' : ''}`} title={map.groupId ? 'Saved to the group' : 'Saved to My maps'}>
           {label}
         </span>
       }
@@ -144,5 +146,22 @@ function Synced({ map, onHome, onCreate, onOpen }: { map: CloudMap; onHome: () =
       }}
       onCreate={onCreate}
     />
+  );
+}
+
+/** Shown while a map loads: the editor's frame, so nothing jumps when it arrives. */
+function EditorSkeleton() {
+  return (
+    <div className="app skeleton-app" aria-busy="true" aria-label="Opening map">
+      <header className="topbar">
+        <Wordmark />
+        <span className="sk-line" style={{ width: 160 }} />
+      </header>
+      <div className="body">
+        <aside className="panel left" />
+        <main className="stage" />
+        <aside className="panel right" />
+      </div>
+    </div>
   );
 }

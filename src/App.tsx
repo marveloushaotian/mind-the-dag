@@ -7,6 +7,7 @@ import { createCloudMap, explain, refreshSession, useMember } from './cloud';
 import { createMap, deleteMap, loadMap, saveMap } from './library';
 import type { Doc } from './model';
 import { decodeDoc } from './share';
+import { setOpenMap, transition } from './motion';
 
 /**
  * Routes: `#/` start page, `#/map/<id>` a map in this browser, `#/cloud/<id>` a map in the
@@ -35,7 +36,7 @@ export default function App() {
   const moved = useRef(new Set<string>());
   useEffect(() => {
     void refreshSession();
-    const on = () => setR(route());
+    const on = () => transition(() => setR(route()));
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);
@@ -58,6 +59,10 @@ export default function App() {
     },
     [member],
   );
+  // Remember which map is open, so going back can shrink it into its card.
+  useEffect(() => {
+    if (r.kind === 'local' || r.kind === 'cloud') setOpenMap(r.id);
+  }, [r]);
   const loadCode = useCallback(() => decodeDoc(r.kind === 'view' ? r.code : ''), [r]);
 
   if (r.kind === 'view') return <Viewer load={loadCode} onHome={goHome} onCopy={(d) => void create(d)} />;

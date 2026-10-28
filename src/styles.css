@@ -314,3 +314,56 @@ button.link.inline { height: auto; padding: 0; font: inherit; color: var(--ink);
 .landing-try:hover:not(:disabled) { background: #fff; border-style: solid; }
 .local-banner { margin: 0 0 24px; }
 @media (max-width: 860px) { .landing { grid-template-columns: 1fr; gap: 28px; padding: 28px 16px 48px; } .landing-side { position: static; order: -1; } .landing-intro h1 { font-size: 28px; } }
+
+/* ---------------------------------------------------------------- motion */
+:root { --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1); }
+@keyframes mtd-fade-in { from { opacity: 0; } }
+@keyframes mtd-fade-out { to { opacity: 0; } }
+@keyframes mtd-rise-in { from { opacity: 0; transform: translateY(6px); } }
+@keyframes mtd-pop-in { from { opacity: 0; transform: translateY(4px) scale(0.97); } }
+@keyframes mtd-pop-out { to { opacity: 0; transform: scale(0.98); } }
+@keyframes mtd-shimmer { from { background-position: -240px 0; } to { background-position: 240px 0; } }
+
+/* the top bar stays in place while the page under it changes */
+.topbar { view-transition-name: topbar; }
+::view-transition-group(topbar) { animation-duration: 200ms; }
+
+/* page changes (view transitions): cross-fade with a slight rise; the opened map grows out of its card */
+::view-transition-old(root) { animation: 160ms ease-in both mtd-fade-out; }
+::view-transition-new(root) { animation: 220ms var(--ease-out) backwards mtd-rise-in; }
+::view-transition-group(map-morph) { animation-duration: 320ms; animation-timing-function: var(--ease-out); }
+::view-transition-old(map-morph), ::view-transition-new(map-morph) { animation-duration: 320ms; height: 100%; object-fit: cover; }
+
+/* dialogs and menus */
+.modal-backdrop { animation: 160ms ease-out backwards mtd-fade-in; }
+.modal { animation: 200ms var(--ease-out) backwards mtd-pop-in; }
+.modal-backdrop.closing { animation: 140ms ease-in both mtd-fade-out; }
+.modal-backdrop.closing .modal { animation: 140ms ease-in both mtd-pop-out; }
+.menu-list, .popover { animation: 140ms var(--ease-out) backwards mtd-pop-in; transform-origin: top; }
+@keyframes mtd-toast-in { from { opacity: 0; transform: translate(-50%, 6px); } }
+.toast { animation: 200ms var(--ease-out) backwards mtd-toast-in; }
+.banner, .callout, .home-notice, .home-error, .note.ok, .note.warn { animation: 200ms var(--ease-out) backwards mtd-rise-in; }
+
+/* lists: cards rise in one after another; hover lifts them a little */
+.cards > .card { animation: 260ms var(--ease-out) backwards mtd-rise-in; animation-delay: calc(var(--i, 0) * 30ms); transition: transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out), border-color 160ms; }
+.card:hover { transform: translateY(-2px); }
+.side-item { transition: background-color 150ms ease, color 150ms ease; }
+.save-state { animation: 200ms ease backwards mtd-fade-in; }
+button { transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
+
+/* loading placeholders */
+.card.skeleton { pointer-events: none; padding-bottom: 14px; }
+.card.skeleton .thumb, .sk-line, .skeleton-app .panel, .skeleton-app .stage {
+  background: linear-gradient(90deg, #eef0f2 0, #f6f7f8 120px, #eef0f2 240px) no-repeat;
+  background-size: 480px 100%; animation: 1.2s linear infinite mtd-shimmer;
+}
+.sk-line { display: block; height: 10px; border-radius: 5px; margin: 10px 14px 0; width: 60%; }
+.sk-line.short { width: 35%; }
+.skeleton-app .topbar .sk-line { margin: 0 0 0 16px; height: 12px; }
+.skeleton-app .stage { background-color: #fafbfb; }
+.skeleton-app { animation: 200ms ease backwards mtd-fade-in; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}

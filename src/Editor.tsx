@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { metagenomeExample } from './examples';
 import { download, ExportDialog, slug, type ExportFormat } from './exporters';
 import { IFit, IHelp, IMinus, IPlus, IRedo, IUndo } from './icons';
@@ -13,6 +13,7 @@ import { usePanZoom } from './panzoom';
 import type { ThemeId } from './tokens';
 import { Menu, Wordmark } from './ui';
 import { ShareDialog, ShortcutsDialog } from './dialogs';
+import { MORPH } from './motion';
 
 type DragState =
   | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
@@ -119,9 +120,12 @@ export default function Editor({
     setView({ k: k2, x: cx - r.width / 2 / k2, y: cy - r.height / 2 / k2 });
   };
 
+  // Fit before the first paint, so a page transition shows the map already in place.
+  useLayoutEffect(() => {
+    fit();
+  }, [fit]);
   useEffect(() => {
     const t = window.setTimeout(() => {
-      fit();
       if (!initial.stations.length && !initial.sections.length) {
         setToolState('line');
         titleRef.current?.select();
@@ -655,7 +659,7 @@ export default function Editor({
           </span>
         )}
         {saveState ?? (
-          <span className="save-state" title="Maps are saved automatically in this browser">
+          <span key={savedDoc === doc ? 'saved' : 'saving'} className="save-state" title="Maps are saved automatically in this browser">
             {savedDoc === doc ? 'Saved' : 'Saving…'}
           </span>
         )}
@@ -725,6 +729,7 @@ export default function Editor({
           <svg
             ref={svgRef}
             className={`canvas tool-${tool}${drag?.kind === 'pan' ? ' panning' : ''}`}
+            style={{ viewTransitionName: MORPH }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}

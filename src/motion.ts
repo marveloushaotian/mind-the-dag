@@ -5,7 +5,7 @@
  */
 import { flushSync } from 'react-dom';
 
-type VT = { finished: Promise<void>; ready: Promise<void> };
+type VT = { finished: Promise<void>; ready: Promise<void>; updateCallbackDone: Promise<void> };
 type DocVT = Document & { startViewTransition?: (cb: () => void | Promise<void>) => VT };
 
 export const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -41,6 +41,9 @@ export function transition(update: () => void): void {
         if (t && !document.querySelector('.canvas')) t.style.viewTransitionName = MORPH;
       }
     });
+    // A newer transition skips this one (its update still runs): nothing to report.
+    vt.ready.catch(() => undefined);
+    vt.updateCallbackDone.catch(() => undefined);
     void vt.finished.finally(clearMorph);
   } catch {
     update();

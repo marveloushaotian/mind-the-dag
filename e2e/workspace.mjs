@@ -28,7 +28,7 @@ async function signIn(page, email) {
   if (await alt.count()) await alt.click();
   await card.getByLabel('Email').fill(email);
   await card.getByLabel('Password').fill(PASS);
-  await card.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await card.getByRole('button', { name: /^Sign in with email$/ }).click();
   await page.locator('.account-name').waitFor();
 }
 const saved = async (page) => {
@@ -37,6 +37,7 @@ const saved = async (page) => {
 };
 
 const browser = await chromium.launch();
+const pages = {};
 try {
   log('create accounts (admin)');
   const su = (await api('/api/collections/_superusers/auth-with-password', { method: 'POST', body: JSON.stringify({ identity: SU_EMAIL, password: SU_PASS }) })).token;
@@ -48,6 +49,7 @@ try {
 
   const A = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
   const B = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
+  Object.assign(pages, { A, B });
   for (const p of [A, B]) p.on('pageerror', (e) => console.log(`::warning::page error: ${e.message}`));
 
   log('signed out: a draft in this browser');
@@ -104,6 +106,7 @@ try {
 
   log('Carol signs up through the link with email and password and lands in Lab');
   const Cpage = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
+  pages.C = Cpage;
   await sleep(3500);
   await Cpage.goto(link);
   await Cpage.getByRole('button', { name: 'Sign up with email' }).click();
@@ -150,6 +153,10 @@ try {
 } catch (e) {
   console.log(`::error title=e2e failed at: ${step}::${String(e.message || e).split('\n').filter(Boolean).slice(0, 4).join(' | ').slice(0, 600)}`);
   process.exitCode = 1;
+  for (const [k, p] of Object.entries(pages)) {
+    const text = await p.evaluate(() => document.body.innerText.replace(/\s+/g, ' ').slice(0, 500)).catch(() => '?');
+    console.log(`::warning title=page ${k}::${p.url()} :: ${text}`);
+  }
 } finally {
   await browser.close();
 }

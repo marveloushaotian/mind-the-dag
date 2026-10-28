@@ -1,75 +1,90 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import CloudEditor from './CloudEditor';
 import Editor from './Editor';
 import Home from './Home';
 import Viewer from './Viewer';
-import { createMap, loadMap } from './library';
-import { getGroupMap, refreshSession, removeGroupMap, useMember } from './group';
-import { decodeDoc } from './share';
+import { createCloudMap, explain, refreshSession, useMember } from './cloud';
+import { createMap, deleteMap, loadMap, saveMap } from './library';
 import type { Doc } from './model';
+import { decodeDoc } from './share';
 
-/** Routes: `#/` start page, `#/map/<id>` editor, `#/view/<code>` shared view. */
-function currentRoute(): string | null {
-  const m = window.location.hash.match(/^#\/map\/([\w-]+)/);
-  return m ? m[1] : null;
+/**
+ * Routes: `#/` start page, `#/map/<id>` a map in this browser, `#/cloud/<id>` a map in the
+ * cloud workspace, `#/view/<code>` a shared view-only link.
+ */
+type Route = { kind: 'home' } | { kind: 'local'; id: string } | { kind: 'cloud'; id: string } | { kind: 'view'; code: string };
+function route(): Route {
+  const h = window.location.hash;
+  let m = h.match(/^#\/map\/([\w-]+)/);
+  if (m) return { kind: 'local', id: m[1] };
+  m = h.match(/^#\/(?:cloud|group)\/([\w-]+)/);
+  if (m) return { kind: 'cloud', id: m[1] };
+  m = h.match(/^#\/view\/([\w-]+)/);
+  if (m) return { kind: 'view', code: m[1] };
+  return { kind: 'home' };
 }
-const viewCode = () => window.location.hash.match(/^#\/view\/([\w-]+)/)?.[1] ?? null;
-const groupRoute = () => window.location.hash.match(/^#\/group\/([\w-]+)/)?.[1] ?? null;
 
-function GroupViewer({ id, onHome, onCopy }: { id: string; onHome: () => void; onCopy: (d: Doc) => void }) {
-  const member = useMember();
-  const [owner, setOwner] = useState<{ id: string; name: string } | null>(null);
-  const load = useCallback(() => getGroupMap(id).then((m) => (setOwner(m.owner), m.doc)), [id]);
-  const mine = !!member && owner?.id === member.id;
-  return (
-    <Viewer
-      key={`${id}:${member?.id ?? ''}`}
-      load={load}
-      onHome={onHome}
-      onCopy={onCopy}
-      byline={owner ? `Shared by ${mine ? 'you' : owner.name}` : undefined}
-      errorText={member ? 'This map is no longer in the group library.' : 'Sign in on the start page to see the group library.'}
-      actions={
-        mine ? (
-          <button
-            className="danger"
-            onClick={() => {
-              if (window.confirm('Remove this map from the group library? Your own draft is not affected.')) void removeGroupMap(id).then(onHome);
-            }}
-          >
-            Remove from group
-          </button>
-        ) : undefined
-      }
-    />
-  );
-}
+/** Section of the start page to return to (My maps, a group, …). */
+export const SECTION_KEY = 'mind-the-dag:section';
 
 export default function App() {
-  const [mapId, setMapId] = useState<string | null>(currentRoute);
-  const [code, setCode] = useState<string | null>(viewCode);
-  const [groupId, setGroupId] = useState<string | null>(groupRoute);
+  const [r, setR] = useState<Route>(route);
+  const member = useMember();
+  const [error, setError] = useState<string | null>(null);
+  // Drafts moved to the cloud: the closing editor must not save them back into this browser.
+  const moved = useRef(new Set<string>());
   useEffect(() => {
     void refreshSession();
-  }, []);
-  const loadCode = useCallback(() => decodeDoc(code ?? ''), [code]);
-  useEffect(() => {
-    const on = () => {
-      setMapId(currentRoute());
-      setCode(viewCode());
-      setGroupId(groupRoute());
-    };
+    const on = () => setR(route());
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);
 
-  const go = (id: string | null) => {
-    window.location.hash = id ? `#/map/${id}` : '#/';
-  };
-  const create = (d: Doc) => go(createMap(d));
+  const goHome = () => (window.location.hash = '#/');
+  const openLocal = (id: string) => (window.location.hash = `#/map/${id}`);
+  const openCloud = (id: string) => (window.location.hash = `#/cloud/${id}`);
 
-  if (code) return <Viewer load={loadCode} onHome={() => go(null)} onCopy={create} />;
-  if (groupId) return <GroupViewer id={groupId} onHome={() => go(null)} onCopy={create} />;
-  const doc = mapId ? loadMap(mapId) : null;
-  if (!mapId || !doc) return <Home onOpen={go} onCreate={create} />;
-  return <Editor key={mapId} mapId={mapId} initial={doc} onHome={() => go(null)} onCreate={create} />;
+  /** New maps go to the cloud when signed in (My maps, or the group being viewed), else to this browser. */
+  const create = useCallback(
+    async (d: Doc, groupId: string | null = null) => {
+      setError(null);
+      if (member) {
+        try {
+          openCloud((await createCloudMap(d, groupId)).id);
+        } catch (e) {
+          setError(explain(e));
+        }
+      } else openLocal(createMap(d));
+    },
+    [member],
+  );
+  const loadCode = useCallback(() => decodeDoc(r.kind === 'view' ? r.code : ''), [r]);
+
+  if (r.kind === 'view') return <Viewer load={loadCode} onHome={goHome} onCopy={(d) => void create(d)} />;
+  if (r.kind === 'cloud') return <CloudEditor id={r.id} onHome={goHome} onCreate={(d) => void create(d)} onOpen={openCloud} />;
+  const doc = r.kind === 'local' ? loadMap(r.id) : null;
+  if (r.kind === 'local' && doc) {
+    const id = r.id;
+    return (
+      <Editor
+        key={id}
+        initial={doc}
+        onSave={(d) => !moved.current.has(id) && saveMap(id, d)}
+        place={{ kind: 'local', mapId: id }}
+        onHome={goHome}
+        onCreate={(d) => void create(d)}
+        onMoveToCloud={
+          member
+            ? async () => {
+                const m = await createCloudMap(loadMap(id) ?? doc);
+                moved.current.add(id);
+                deleteMap(id);
+                openCloud(m.id);
+              }
+            : undefined
+        }
+      />
+    );
+  }
+  return <Home onOpenLocal={openLocal} onOpenCloud={openCloud} onCreate={create} createError={error} />;
 }

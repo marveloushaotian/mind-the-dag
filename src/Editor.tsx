@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { metagenomeExample } from './examples';
 import { download, ExportDialog, slug, type ExportFormat } from './exporters';
 import { IFit, IHelp, IMinus, IPlus, IRedo, IUndo } from './icons';
-import { isBackup, restoreBackup, saveMap } from './library';
+import { isBackup, restoreBackup } from './library';
 import { importFile } from './importers';
 import { roundedPath, routeCentre } from './geometry';
 import { derive, emptyDoc, snap, snapStation, uid, type Doc, type Station } from './model';
@@ -25,12 +25,35 @@ type DragState =
   | { kind: 'marquee'; start: { x: number; y: number }; cur: { x: number; y: number }; base: Set<string> };
 
 
-export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: string; initial: Doc; onHome: () => void; onCreate: (d: Doc) => void }) {
+/** Where the open map lives; decides the save label and what Share offers. */
+export type Place = { kind: 'local'; mapId: string } | { kind: 'cloud'; mapId: string; groupId: string | null; groupName: string | null };
+
+export default function Editor({
+  initial,
+  onSave,
+  place,
+  saveState,
+  banner,
+  onHome,
+  onCreate,
+  onMoveToCloud,
+}: {
+  initial: Doc;
+  onSave: (d: Doc) => void;
+  place: Place;
+  /** Replaces the default "Saved / Saving…" label (cloud maps report their own state). */
+  saveState?: ReactNode;
+  banner?: ReactNode;
+  onHome: () => void;
+  onCreate: (d: Doc) => void;
+  /** Local maps, signed in: move this map into My maps. */
+  onMoveToCloud?: () => Promise<void>;
+}) {
   const [savedDoc, setSavedDoc] = useState<Doc>(initial);
   const store = useDocument(
     () => initial,
     (d) => {
-      saveMap(mapId, d);
+      onSave(d);
       setSavedDoc(d);
     },
   );
@@ -623,9 +646,19 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
         </button>
         <span className="divider" aria-hidden="true" />
         <input ref={titleRef} className="doc-title" value={doc.title} onChange={(e) => update((d) => void (d.title = e.target.value), 'title')} aria-label="Map title" spellCheck={false} />
-        <span className="save-state" title="Maps are saved automatically in this browser">
-          {savedDoc === doc ? 'Saved' : 'Saving…'}
-        </span>
+        {place.kind === 'cloud' && place.groupName && (
+          <span
+            className="place-pill"
+            title="Everyone in this group can edit this map. If two people edit it at the same time, the later save is held back and you choose which version to keep."
+          >
+            {place.groupName}
+          </span>
+        )}
+        {saveState ?? (
+          <span className="save-state" title="Maps are saved automatically in this browser">
+            {savedDoc === doc ? 'Saved' : 'Saving…'}
+          </span>
+        )}
         <div className="group">
           <button className="icon" onClick={undo} disabled={!store.canUndo} title="Undo (⌘Z)" aria-label="Undo">
             <IUndo />
@@ -674,6 +707,7 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
         </div>
       </header>
 
+      {banner}
       <div className="body">
         <aside className="panel left">
           <LeftRail doc={doc} update={update} tool={tool} setTool={setTool} active={active} setActive={setActiveLine} theme={theme} />
@@ -810,7 +844,7 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
       </div>
 
       {help && <ShortcutsDialog onClose={() => setHelp(false)} />}
-      {sharing && <ShareDialog doc={doc} draftId={mapId} onClose={() => setSharing(false)} />}
+      {sharing && <ShareDialog doc={doc} place={place} onMoveToCloud={onMoveToCloud} onClose={() => setSharing(false)} />}
       {exporting && <ExportDialog doc={doc} theme={theme} format={exporting} onClose={() => setExporting(null)} onDone={flash} />}
     </div>
   );

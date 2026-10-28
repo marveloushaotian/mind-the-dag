@@ -1,0 +1,38 @@
+name: Workspace end-to-end
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'server/**', 'e2e/**', 'package.json', 'package-lock.json', '.github/workflows/e2e.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Server
+        run: |
+          docker build server -t library
+          docker run -d --name pb -p 8090:8090 -e ORIGINS=http://localhost:4173 library
+          for i in $(seq 1 30); do curl -sf http://localhost:8090/api/health && break; sleep 1; done
+          docker exec pb /pb/pocketbase superuser upsert --dir=/pb_data admin@example.test 'e2e-admin-pass-123'
+      - name: Web app
+        run: |
+          VITE_LIBRARY_URL=http://localhost:8090 npm run build
+          nohup npx vite preview --port 4173 --strictPort > preview.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:4173/mind-the-dag/ >/dev/null && break; sleep 1; done
+      - name: Browser
+        run: |
+          npm i --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: End-to-end
+        run: node e2e/workspace.mjs http://localhost:4173/mind-the-dag/ http://localhost:8090 admin@example.test 'e2e-admin-pass-123' || (docker logs pb | tail -40; exit 1)

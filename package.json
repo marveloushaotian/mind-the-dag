@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "jspdf": "^4.2.1",
+    "pocketbase": "0.28.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "svg2pdf.js": "^2.8.1"

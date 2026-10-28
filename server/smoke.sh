@@ -62,6 +62,10 @@ em=$(j "$B/api/collections/invitations/records/$INV" -H "Authorization: $TB" | j
 s=$(code -X POST "$B/api/collections/invitations/records" -H "Authorization: $TA" -d "{\"group\":\"$G\",\"email\":\"b@example.test\",\"invitedBy\":\"$A_ID\"}")
 [ "$s" = 400 ] || fail "invite an existing member (got $s)"; ok "invitations"
 
+[ "$(count users "$TC")" = 1 ] || fail "user list limited to people you share a group with"
+[ "$(count users "$TA")" = 2 ] || fail "group owner sees the new member"
+ok "user names visible only within shared groups"
+
 # --- group maps
 MB=$(newmap "$TB" "$B_ID" "$G"); [ "$MB" != null ] || fail "member creates group map"
 [ "$(count maps "$TA" "&filter=group%3D%27$G%27")" = 1 ] || fail "group map visible to members"

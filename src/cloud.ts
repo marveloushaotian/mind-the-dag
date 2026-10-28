@@ -317,6 +317,10 @@ export interface SignupInfo {
   reason: '' | 'used' | 'expired' | 'unknown';
   inviter: string;
   group: string;
+  /** The link was made by whoever is signed in; then also how many places are used. */
+  mine?: boolean;
+  uses?: number;
+  maxUses?: number;
 }
 const toLink = (r: RecordModel): SignupLink => ({
   id: r.id,

@@ -383,6 +383,10 @@ button { transition: background-color 120ms ease, border-color 120ms ease, color
 .btn-email { background: #fff; border-color: var(--line); color: var(--ink); }
 .btn-email.on { border-color: var(--ink); }
 .join-form { margin-top: 4px; }
+.join-usage { margin: 0; font-size: 13px; font-weight: 600; color: var(--accent-ink); }
+.join-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 4px; }
+.join-actions .link { margin-left: auto; }
+.join-preview { margin: -6px 0 2px; padding: 8px 12px; border-radius: 8px; background: var(--hover); font-size: 12px; line-height: 17px; color: var(--muted); }
 .signin-skeleton.short { width: 60%; }
 .join .note, .landing .note { margin: 0; font-size: 12px; line-height: 17px; color: var(--muted); }
 .join .note.warn, .landing .note.warn { color: var(--danger); }

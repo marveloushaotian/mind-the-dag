@@ -128,6 +128,13 @@ s=$(code -X POST "$B/api/collections/users/records" -d "{\"email\":\"eve@example
 L2=$(j -X POST "$B/api/collections/signups/records" -H "Authorization: $TA" -d "{\"createdBy\":\"$A_ID\",\"group\":\"$G2\"}" | jq -r .code)
 [ "$(code -X POST "$B/api/mtd/signups/$L2/accept" -H "Authorization: $TC")" = 200 ] || fail "existing member accepts a link"
 [ "$(count memberships "$TC" "&filter=group%3D%27$G2%27")" -ge 1 ] || fail "existing member joined via link"
+[ "$(code -X POST "$B/api/mtd/signups/$L2/accept" -H "Authorization: $TC")" = 200 ] || fail "accept again"
+[ "$(code -X POST "$B/api/mtd/signups/$L2/accept" -H "Authorization: $TA")" = 200 ] || fail "maker opens own link"
+[ "$(j "$B/api/collections/signups/records?filter=code%3D%27$L2%27" -H "Authorization: $TA" | jq '.items[0].usedBy | length')" = 1 ] || fail "only the new member used a place"
+mine=$(j "$B/api/mtd/signups/$L2" -H "Authorization: $TA")
+[ "$(echo "$mine" | jq -r .mine)" = true ] && [ "$(echo "$mine" | jq -r .uses)" = 1 ] || fail "maker sees own link ($mine)"
+[ "$(j "$B/api/mtd/signups/$L2" -H "Authorization: $TC" | jq -r .mine)" = false ] || fail "others don't see it as theirs"
+[ "$(j "$B/api/mtd/signups/$L2" | jq -r '.mine, .uses')" = "$(printf 'false\nnull')" ] || fail "anonymous link info"
 [ "$(count signups "$TC")" = 0 ] || fail "links visible to others"
 [ "$(code -X DELETE "$B/api/collections/signups/records/$LID" -H "Authorization: $TA")" = 204 ] || fail "admin revokes a link"
 M=$(j -X POST "$B/api/collections/signups/records" -H "Authorization: $TA" -d "{\"createdBy\":\"$A_ID\",\"maxUses\":2}")

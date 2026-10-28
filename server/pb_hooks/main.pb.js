@@ -187,10 +187,22 @@ routerAdd("GET", "/api/mtd/signups/{code}", (e) => {
   try {
     if (s.getString("group")) group = $app.findRecordById("groups", s.getString("group")).getString("name");
   } catch (_) {}
-  return e.json(200, { valid: !expired && !used, reason: used ? "used" : expired ? "expired" : "", inviter: inviter, group: group });
+  // The person who made the link sees it as theirs (with its use count), not as an invitation.
+  const mine = !!e.auth && e.auth.id === s.getString("createdBy");
+  return e.json(200, {
+    valid: !expired && !used,
+    reason: used ? "used" : expired ? "expired" : "",
+    inviter: inviter,
+    group: group,
+    mine: mine,
+    uses: mine ? s.getStringSlice("usedBy").length : undefined,
+    maxUses: mine ? Math.max(1, s.getInt("maxUses")) : undefined,
+  });
 });
 
-// Someone who already has an account opens a link: join its group and use the link up.
+// Someone who already has an account opens a link: join its group. A place on the link is
+// used only when that adds them to the group; the link's maker, people already in the group,
+// and links without a group use nothing.
 routerAdd(
   "POST",
   "/api/mtd/signups/{code}/accept",
@@ -201,27 +213,25 @@ routerAdd(
     } catch (_) {
       throw new NotFoundError("This invitation link does not exist.");
     }
+    const g = s.getString("group");
+    if (!g || e.auth.id === s.getString("createdBy")) return e.json(200, { group: g });
+    let member = true;
+    try {
+      $app.findFirstRecordByFilter("memberships", "group = {:g} && user = {:u}", { g: g, u: e.auth.id });
+    } catch (_) {
+      member = false;
+    }
+    if (member) return e.json(200, { group: g });
     const users = s.getStringSlice("usedBy");
     const already = users.indexOf(e.auth.id) >= 0;
     if (!already && users.length >= Math.max(1, s.getInt("maxUses"))) throw new BadRequestError("All places on this invitation link have been used.");
     if (new Date(s.getString("expires").replace(" ", "T")) <= new Date()) throw new BadRequestError("This invitation link has expired.");
-    const g = s.getString("group");
     $app.runInTransaction((tx) => {
-      if (g) {
-        let exists = true;
-        try {
-          tx.findFirstRecordByFilter("memberships", "group = {:g} && user = {:u}", { g: g, u: e.auth.id });
-        } catch (_) {
-          exists = false;
-        }
-        if (!exists) {
-          const m = new Record(tx.findCollectionByNameOrId("memberships"));
-          m.set("group", g);
-          m.set("user", e.auth.id);
-          m.set("role", "member");
-          tx.save(m);
-        }
-      }
+      const m = new Record(tx.findCollectionByNameOrId("memberships"));
+      m.set("group", g);
+      m.set("user", e.auth.id);
+      m.set("role", "member");
+      tx.save(m);
       if (!already) {
         s.set("usedBy+", e.auth.id);
         tx.save(s);

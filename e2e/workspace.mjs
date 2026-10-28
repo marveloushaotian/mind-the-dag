@@ -105,6 +105,17 @@ try {
   const link = await inv.getByLabel('Invitation link').inputValue();
   await inv.getByRole('button', { name: 'Close' }).click();
 
+  log('Alice opens her own link: it is shown as hers and uses no place');
+  const home = A.url();
+  await A.goto(link);
+  await A.getByText('This is your invitation link').waitFor();
+  await A.getByText('0 of 1 place used').waitFor();
+  await A.getByRole('button', { name: 'Preview what they see' }).click();
+  await A.getByRole('button', { name: 'Sign up with email' }).waitFor();
+  await A.getByRole('button', { name: 'Close preview' }).click();
+  await A.getByRole('button', { name: 'Back to your maps' }).click();
+  await A.goto(home);
+
   log('Carol signs up through the link with email and password and lands in Lab');
   const Cpage = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
   pages.C = Cpage;

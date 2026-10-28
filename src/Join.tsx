@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { OAuthButton, SignInCard } from './dialogs';
-import { acceptSignupLink, explain, listMyGroups, signInProviders, signupInfo, signUpWith, signUpWithPassword, useMember, type Provider, type SignupInfo } from './cloud';
+import { acceptSignupLink, explain, joinUrl, listMyGroups, signInProviders, signupInfo, signUpWith, signUpWithPassword, useMember, type Provider, type SignupInfo } from './cloud';
 import { Wordmark } from './ui';
 
 /** The page an invitation link opens: create an account (GitHub or email), or join with one you have. */
@@ -14,10 +14,12 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState(false);
+  const [copied, setCopied] = useState(false);
   useEffect(() => {
     signupInfo(code).then(setInfo, () => setInfo({ valid: false, reason: 'unknown', inviter: '', group: '' }));
     void signInProviders().then(setProviders);
-  }, [code]);
+  }, [code, member?.id]);
 
   const run = async (what: string, fn: () => Promise<void>) => {
     setBusy(what);
@@ -59,6 +61,43 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
             <div className="signin-skeleton" />
             <div className="signin-skeleton short" />
           </div>
+        ) : member && info.mine && !preview ? (
+          <div className="signin-card join-card">
+            <h2>This is your invitation link</h2>
+            <p className="signin-sub">
+              You made it, so you see it as its owner. Anyone else who opens it, without being signed in, gets the sign-up page
+              {info.group ? (
+                <>
+                  {' '}and joins <strong>{info.group}</strong>
+                </>
+              ) : null}
+              . Opening it yourself doesn't use a place.
+            </p>
+            <p className="join-usage">
+              {info.valid
+                ? `${info.uses ?? 0} of ${info.maxUses ?? 1} ${(info.maxUses ?? 1) === 1 ? 'place' : 'places'} used`
+                : info.reason === 'expired'
+                  ? 'Expired: make a new one under Invite people.'
+                  : 'All places used: make a new one under Invite people.'}
+            </p>
+            <div className="join-actions">
+              <button
+                className="primary"
+                onClick={() =>
+                  void navigator.clipboard.writeText(joinUrl(code)).then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1600);
+                  })
+                }
+              >
+                {copied ? 'Copied' : 'Copy link'}
+              </button>
+              {info.valid && <button onClick={() => setPreview(true)}>Preview what they see</button>}
+              <button className="link" onClick={() => onDone(null)}>
+                Back to your maps
+              </button>
+            </div>
+          </div>
         ) : !info.valid ? (
           <div className="signin-card join-card">
             <h2>This invitation link can't be used</h2>
@@ -72,7 +111,7 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
             </p>
             <button onClick={() => onDone(null)}>Go to the start page</button>
           </div>
-        ) : member ? (
+        ) : member && !preview ? (
           <div className="signin-card join-card">
             <h2>You're invited</h2>
             <p className="signin-sub">
@@ -92,13 +131,21 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
           </div>
         ) : (
           <div className="signin-card join-card">
+            {preview && (
+              <p className="join-preview">
+                Preview: this is what people who aren't signed in see. Buttons are off here.{' '}
+                <button className="link inline" onClick={() => (setPreview(false), setMode('choose'))}>
+                  Close preview
+                </button>
+              </p>
+            )}
             <h2>You're invited</h2>
             <p className="signin-sub">
               {info.inviter} invited you to {invitedTo}. Create your account with either of these:
             </p>
             <div className="join-choices">
               {providers.map((p) => (
-                <OAuthButton key={p} provider={p} busy={busy === p} disabled={!!busy} onClick={() => void run(p, async () => (await signUpWith(p, code), await finish()))} label={`Sign up with ${p === 'github' ? 'GitHub' : p}`} />
+                <OAuthButton key={p} provider={p} busy={busy === p} disabled={!!busy || preview} onClick={() => void run(p, async () => (await signUpWith(p, code), await finish()))} label={`Sign up with ${p === 'github' ? 'GitHub' : p}`} />
               ))}
               <button className={`btn-oauth btn-email${mode === 'email' ? ' on' : ''}`} disabled={!!busy} onClick={() => setMode('email')}>
                 Sign up with email
@@ -109,6 +156,7 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
                 className="stack tight join-form"
                 onSubmit={(e) => {
                   e.preventDefault();
+                  if (preview) return;
                   void run('email', async () => (await signUpWithPassword(code, name, email, password), await finish()));
                 }}
               >
@@ -125,7 +173,7 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
                   <input type="password" autoComplete="new-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
                 </label>
                 <p className="note">At least 8 characters. There is no password-reset email, so keep it in your password manager.</p>
-                <button type="submit" className="primary signin-submit" disabled={!!busy || !name.trim() || !email.includes('@') || password.length < 8}>
+                <button type="submit" className="primary signin-submit" disabled={preview || !!busy || !name.trim() || !email.includes('@') || password.length < 8}>
                   {busy === 'email' ? 'Creating your account…' : 'Create account'}
                 </button>
               </form>
@@ -133,7 +181,7 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
             {error && <p className="note warn">{error}</p>}
             <p className="signin-foot">
               Already have an account?{' '}
-              <button className="link inline" onClick={() => setMode('signin')}>
+              <button className="link inline" disabled={preview} onClick={() => setMode('signin')}>
                 Sign in to accept
               </button>
             </p>

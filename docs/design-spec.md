@@ -82,6 +82,7 @@ The merge is solid so that it never looks like a shared capsule. A start or stop
 ## 7. Labels
 
 - Labels sit **10 px clear** of the line, on the **outer side of the bundle**.
+- **Detail lines.** A label can have more lines (Shift+Enter). The first line is the station name (600 · 13, ink); each further line is a detail line (400 · 12, muted) on a 16 px pitch, used to list the tools in a tool group. Above the line the block grows upwards; left or right of it the block is centred on the station.
 - Along one run, all labels go on one side. They change sides only at a bend or a branch.
 - A label never sits on a line. If a crossing cannot be avoided, the label gets a **4 px halo** in the colour of the surface underneath it.
 - **Automatic sides.** Stations joined by straight connections along the same axis form a run, and every label set to Auto in a run takes the same side. Horizontal runs try above, then below, and only then right or left; vertical runs try right, then left. The first side with no collision wins; otherwise the one with the fewest, where another label counts 20, a station, icon or section header 5 and a line 1. Labels with a fixed side are placed first.
@@ -115,6 +116,7 @@ The merge is solid so that it never looks like a shared capsule. A start or stop
 - The title block sits above the map and the legend below it, both left-aligned, until either is moved. As soon as stations or sections are moved or resized, both stay where they are.
 - **Legend**: the lines first, in bundle order from top to bottom (the same order as on the map), then a shape key: step, shared, merge, start, stop, planned.
   - The legend has no frame.
+  - The line key can wrap into 2–4 columns (column-major), with the shape key in the columns after it, so a wide map keeps a short legend.
   - It goes in the largest empty corner, at least 32 px from any section.
 - Journal export leaves out the title block.
 

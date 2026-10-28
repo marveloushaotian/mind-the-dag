@@ -207,6 +207,21 @@ export function Inspector({
           />
         </Field>
         <Toggle label="Legend" checked={doc.legend.show} onChange={(v) => update((d) => void (d.legend.show = v))} />
+        {doc.legend.show && (
+          <Field label="Legend columns" group>
+            <Seg
+              label="Legend columns"
+              value={String(doc.legend.cols ?? 1)}
+              onChange={(v) => update((d) => void (d.legend.cols = Number(v)))}
+              options={[
+                ['1', '1'],
+                ['2', '2'],
+                ['3', '3'],
+                ['4', '4'],
+              ]}
+            />
+          </Field>
+        )}
         <Toggle label="Title block" checked={doc.showTitle} onChange={(v) => update((d) => void (d.showTitle = v))} />
         {doc.showTitle && (
           <Field label="Version line">
@@ -238,7 +253,18 @@ export function Inspector({
       <div className="stack">
         <h3>Station</h3>
         <Field label="Name">
-          <input value={s.label} onChange={(e) => set((st) => void (st.label = e.target.value), 'label')} />
+          <textarea
+            rows={Math.min(5, s.label.split('\n').length)}
+            value={s.label}
+            onChange={(e) => set((st) => void (st.label = e.target.value), 'label')}
+            title="Shift+Enter starts a detail line (for example, the tools in a group)"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                (e.target as HTMLTextAreaElement).blur();
+              }
+            }}
+          />
         </Field>
         <Field label="Type" group>
           <KindPicker value={s.kind} onChange={(k) => set((st) => void (st.kind = k))} />

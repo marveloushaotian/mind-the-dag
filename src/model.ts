@@ -69,7 +69,7 @@ export interface Doc {
   edges: Edge[];
   sections: Section[];
   /** `auto` places the legend below the map until it is dragged. */
-  legend: { x: number; y: number; show: boolean; auto?: boolean };
+  legend: { x: number; y: number; show: boolean; auto?: boolean; /** Columns the line key wraps into (default 1). */ cols?: number };
 }
 
 export const PITCH = tokens.line.pitch;

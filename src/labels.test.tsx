@@ -29,3 +29,30 @@ describe('automatic label sides', () => {
     expect(labelY(svg, 'Alpha')).toBeLessThan(96);
   });
 });
+
+describe('multi-line labels', () => {
+  it('draws the first line as the name and later lines as smaller detail lines', () => {
+    const d = emptyDoc();
+    d.legend.show = false;
+    d.stations = [st('p', 0, 96, 'Callers\nVIBRANT · geNomad'), st('q', 160, 96, '')];
+    d.edges = [{ id: 'run', from: 'p', to: 'q', lines: ['l1'], bend: 0.5 }];
+    const svg = renderToStaticMarkup(<MetroMap doc={d} exporting />);
+    expect(svg).toContain('>Callers<');
+    expect(svg).toMatch(/font-size="12"[^>]*>VIBRANT · geNomad</);
+  });
+});
+
+describe('legend columns', () => {
+  it('wraps the line key into the requested number of columns', async () => {
+    const { legendLayout } = await import('./render');
+    const d = emptyDoc();
+    const names = ['A', 'B', 'C', 'D', 'E'];
+    d.legend.cols = 1;
+    const one = legendLayout(d, names, ['step']);
+    d.legend.cols = 3;
+    const three = legendLayout(d, names, ['step']);
+    expect(new Set(one.lines.map((p) => p.dx)).size).toBe(1);
+    expect(new Set(three.lines.map((p) => p.dx)).size).toBe(3);
+    expect(three.height).toBeLessThan(one.height);
+  });
+});

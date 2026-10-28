@@ -41,7 +41,7 @@ button.danger { color: var(--danger); border-color: transparent; background: tra
 button.danger:hover:not(:disabled) { background: #b44a3a12; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid color-mix(in srgb, var(--focus) 45%, transparent); outline-offset: 1px; }
 kbd { font: inherit; font-size: 11px; color: var(--faint); }
-input:not([type]), input[type='text'], select {
+input:not([type]), input[type='text'], select, textarea {
   font: inherit; width: 100%; height: 32px; padding: 0 10px; color: var(--ink);
   background: #fff; border: 1px solid var(--line); border-radius: 8px;
 }
@@ -127,7 +127,7 @@ input[type='checkbox'] { accent-color: var(--ink); width: 15px; height: 15px; ma
 .empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 14px; pointer-events: none; gap: 6px; }
 .empty kbd { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
 .inline-edit {
-  position: absolute; transform: translateX(-50%); width: 200px !important; height: 30px !important;
+  position: absolute; transform: translateX(-50%);
   text-align: center; font-weight: 600; border-color: var(--focus) !important; box-shadow: 0 4px 16px #1a1d2122;
 }
 .float { position: absolute; display: flex; align-items: center; gap: 2px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 2px; box-shadow: 0 1px 3px #1a1d2114; }
@@ -234,3 +234,6 @@ kbd.key { font: inherit; font-size: 12px; font-weight: 500; color: var(--ink); m
 
 .marquee { fill: #1f6fae10; stroke: var(--focus); }
 .bend-handle { fill: #fff; stroke: var(--focus); stroke-width: 2; cursor: grab; }
+
+textarea { height: auto; padding: 6px 10px; resize: vertical; line-height: 18px; }
+.inline-edit { height: auto !important; min-height: 30px; resize: none; overflow: hidden; }

@@ -38,7 +38,8 @@ function themeColours(theme: ThemeId): Theme {
 
 export interface EdgeGeometry {
   centre: Pt[];
-  lines: { id: string; d: string; o: number }[];
+  /** `centre` is set when this line takes its own route (a lane shift along the connection). */
+  lines: { id: string; d: string; o: number; centre?: Pt[] }[];
   width: number;
   radii: { r45: number; r90: number };
 }
@@ -57,9 +58,20 @@ export function edgeGeometry(dv: Derived, e: Edge): EdgeGeometry | null {
   const half = ((k - 1) / 2) * PITCH;
   const opts = { r45: Math.max(R45, half + 8), r90: Math.max(R90, half + 8) };
   if (centre.length < 2) return { centre, lines: [], width: k * PITCH, radii: opts };
+  const mA = mean(A);
+  const mB = mean(B);
+  const relA = ls.map((l) => laneOffset(dv, A.id, l) - mA);
+  const relB = ls.map((l) => laneOffset(dv, B.id, l) - mB);
+  // Lines keep their actual lanes at both ends. When a line's lane relative to the bundle
+  // differs between the two stations (lines joining or leaving in between), each line
+  // takes its own route, which draws the lane shift as a short 45° step.
+  const shift = A.axis === B.axis && relA.some((r, i) => Math.abs(r - relB[i]) > 0.5);
   const lines = ls.map((id, i) => {
-    const rel = (dv.sigma.get(A.id) ?? 1) * (i - (k - 1) / 2) * PITCH;
-    const o = laneToLeftOffset(centre, A.axis, rel);
+    if (shift) {
+      const own = routeCentre(lanePoint(A, laneOffset(dv, A.id, id)), A.axis, lanePoint(B, laneOffset(dv, B.id, id)), B.axis, e.bend);
+      return { id, d: roundedPath(own, 0, opts), o: 0, centre: own };
+    }
+    const o = laneToLeftOffset(centre, A.axis, relA[i]);
     return { id, d: roundedPath(centre, o, opts), o };
   });
   return { centre, lines, width: k * PITCH, radii: opts };
@@ -83,6 +95,8 @@ function lineSides(doc: Doc, dv: Derived, s: Station) {
   return { neg, pos, toLine: pos ? 1 : neg ? -1 : 1, middle: neg && pos };
 }
 
+const LABEL_LINE = 16;
+
 /** Where a station's label goes, and the box it roughly covers (Inter 600, 13 px). */
 function labelPlacement(s: Station, kind: Station['kind'], n: number, decided?: LabelSide) {
   const ext = markerExtent(kind, n);
@@ -91,23 +105,26 @@ function labelPlacement(s: Station, kind: Station['kind'], n: number, decided?: 
   if (side === 'auto') side = h ? 'above' : 'right';
   const across = h ? ext.across : ext.along;
   const along = h ? ext.along : ext.across;
+  // Multi-line labels: the first line is the name (600 · 13), further lines are details (400 · 12).
+  const rows = s.label.split('\n');
+  const extra = (rows.length - 1) * LABEL_LINE;
   let x = s.x;
   let y = s.y;
   let anchor: 'start' | 'middle' | 'end' = 'middle';
-  if (side === 'above') y = s.y - across - 10;
+  if (side === 'above') y = s.y - across - 10 - extra;
   else if (side === 'below') y = s.y + across + 10 + 9.5;
   else if (side === 'right') {
     x = s.x + along + 10;
-    y = s.y + 4.5;
+    y = s.y + 4.5 - extra / 2;
     anchor = 'start';
   } else {
     x = s.x - along - 10;
-    y = s.y + 4.5;
+    y = s.y + 4.5 - extra / 2;
     anchor = 'end';
   }
-  const w = s.label.length * 7.6;
+  const w = Math.max(...rows.map((r, i) => r.length * (i === 0 ? 7.6 : 6.6)));
   const x0 = anchor === 'middle' ? x - w / 2 : anchor === 'start' ? x : x - w;
-  return { x, y, anchor, box: { x0, y0: y - 11, x1: x0 + w, y1: y + 3 } };
+  return { x, y, anchor, box: { x0, y0: y - 11, x1: x0 + w, y1: y + extra + 3 } };
 }
 
 /** The glyph a station is drawn with: termini in the middle of a line become steps. */
@@ -220,6 +237,44 @@ export function contentBounds(doc: Doc): Bounds | null {
   return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
 }
 
+
+const LEGEND_ROW = 36;
+
+/** Where each legend entry goes: line key wrapped into columns, then the shape key. */
+export function legendLayout(doc: Doc, lineNames: string[], kinds: string[]) {
+  const cols = Math.max(1, Math.min(4, doc.legend.cols ?? 1));
+  const perCol = Math.max(1, Math.ceil(lineNames.length / cols));
+  const lines: { dx: number; dy: number }[] = [];
+  let dx = 0;
+  for (let c = 0; c * perCol < lineNames.length; c++) {
+    const chunk = lineNames.slice(c * perCol, (c + 1) * perCol);
+    chunk.forEach((_, i) => lines.push({ dx, dy: i * LEGEND_ROW }));
+    const longest = Math.max(0, ...chunk.map((n) => n.length));
+    // Inter 12 px is about 6.6 px per character.
+    dx += Math.max(cols > 1 ? 0 : 212, 42 + Math.ceil((longest * 6.6) / 8) * 8 + 40);
+  }
+  const keyRows = cols > 1 ? Math.max(perCol, 1) : Math.max(kinds.length, 1);
+  const shapes: { dx: number; dy: number }[] = [];
+  kinds.forEach((_, i) => {
+    const c = Math.floor(i / keyRows);
+    shapes.push({ dx: dx + c * 136, dy: (i % keyRows) * LEGEND_ROW });
+  });
+  const keyCols = kinds.length ? Math.ceil(kinds.length / keyRows) : 0;
+  const width = dx + keyCols * 136;
+  const rows = Math.max(Math.min(perCol, lineNames.length), kinds.length ? Math.min(keyRows, kinds.length) : 0, 1);
+  return { lines, shapes, width, height: (rows - 1) * LEGEND_ROW + 16 };
+}
+
+/** Shape-key entries: only glyphs that appear on the map. */
+export function legendKinds(doc: Doc, dv: Derived): string[] {
+  const kinds: string[] = [];
+  if (doc.stations.some((s) => s.kind === 'step' && (dv.stationLines.get(s.id)?.length ?? 0) <= 1)) kinds.push('step');
+  if (doc.stations.some((s) => s.kind === 'step' && (dv.stationLines.get(s.id)?.length ?? 0) > 1)) kinds.push('shared step');
+  if (doc.stations.some((s) => s.kind === 'merge')) kinds.push('merge');
+  if (doc.stations.some((s) => s.optional)) kinds.push('optional');
+  return kinds;
+}
+
 const r8 = (v: number) => Math.round(v / 8) * 8;
 export const autoLegendPos = (b: Bounds) => ({ x: r8(b.x0), y: r8(b.y1 + 48) });
 export const autoTitlePos = (b: Bounds) => ({ x: r8(b.x0), y: r8(b.y0 - 48) });
@@ -231,12 +286,13 @@ export function docBounds(doc: Doc): Bounds | null {
   const b = { ...c };
   if (doc.legend.show) {
     const used = new Set(doc.edges.flatMap((e) => e.lines));
-    const rows = Math.max(1, doc.lines.filter((l) => used.has(l.id)).length, 3);
+    const names = doc.lines.filter((l) => used.has(l.id)).map((l) => l.name);
+    const lay = legendLayout(doc, names, legendKinds(doc, derive(doc)));
     const p = doc.legend.auto ? autoLegendPos(c) : doc.legend;
-    b.x0 = Math.min(b.x0, p.x);
-    b.x1 = Math.max(b.x1, p.x + 360);
+    b.x0 = Math.min(b.x0, p.x - 16);
+    b.x1 = Math.max(b.x1, p.x + lay.width);
     b.y0 = Math.min(b.y0, p.y - 16);
-    b.y1 = Math.max(b.y1, p.y + rows * 36);
+    b.y1 = Math.max(b.y1, p.y + lay.height + 8);
   }
   if (doc.showTitle) {
     const p = doc.titleAuto ? autoTitlePos(c) : doc.titlePos;
@@ -385,7 +441,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
       const dash = st.pattern === 'dashed' ? tokens.line.patterns.dashed.join(' ') : st.pattern === 'dotted' ? tokens.line.patterns.dotted.dash.join(' ') : undefined;
       if (line.planned) {
         const half = (W - tokens.planned.wall) / 2;
-        const ctr = g.centre;
+        const ctr = ln.centre ?? g.centre;
         const base = ln.o;
         for (const s of [-1, 1]) {
           ownEls.push(
@@ -682,15 +738,26 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
       const { x, y, anchor } = labelAt.get(s.id) ?? labelPlacement(s, kind, n, sideOf.get(s.id));
       const common = { x, y, textAnchor: anchor, fontSize: 13, fontWeight: 600 } as const;
       // The halo is a separate stroked copy underneath (paint-order is not portable to PDF).
+      const rows = s.label.split('\n');
+      const body = (detailFill: string) =>
+        rows.map((r, i) =>
+          i === 0 ? (
+            r
+          ) : (
+            <tspan key={i} x={x} dy={LABEL_LINE} fontSize={12} fontWeight={400} fill={detailFill}>
+              {r}
+            </tspan>
+          ),
+        );
       if (haloColour)
         labelEls.push(
           <text key={`hl-${s.id}`} {...common} fill={haloColour} stroke={haloColour} strokeWidth={4} strokeLinejoin="round" aria-hidden="true">
-            {s.label}
+            {body(haloColour)}
           </text>,
         );
       labelEls.push(
         <text key={`lb-${s.id}`} data-sel={`station:${s.id}`} {...common} fill={s.optional || s.inactive ? th.muted : th.ink}>
-          {s.label}
+          {body(th.muted)}
         </text>,
       );
     }
@@ -704,40 +771,34 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
   if (doc.legend.show) {
     const { x, y } = legendOrigin;
     const rows = doc.lines.filter((l) => usedLines.has(l.id));
+    const kinds = legendKinds(doc, dv);
+    const lay = legendLayout(doc, rows.map((l) => l.name), kinds);
     rows.forEach((l, i) => {
       const st = withPattern(lineStyle(doc.palette, l.slot, theme), l.pattern);
-      const ry = y + i * 36;
+      const lx = x + lay.lines[i].dx;
+      const ry = y + lay.lines[i].dy;
       const dash = st.pattern === 'dashed' ? '12 8' : st.pattern === 'dotted' ? '2 10' : undefined;
       if (l.planned) {
         legendEls.push(
           <g key={`lg-${l.id}`}>
-            <path d={`M ${x} ${ry - 3.5} H ${x + 32}`} stroke={st.color} strokeWidth={3} />
-            <path d={`M ${x} ${ry + 3.5} H ${x + 32}`} stroke={st.color} strokeWidth={3} />
+            <path d={`M ${lx} ${ry - 3.5} H ${lx + 32}`} stroke={st.color} strokeWidth={3} />
+            <path d={`M ${lx} ${ry + 3.5} H ${lx + 32}`} stroke={st.color} strokeWidth={3} />
           </g>,
         );
       } else {
         legendEls.push(
-          <path key={`lg-${l.id}`} d={`M ${x} ${ry} H ${x + 32}`} stroke={st.color} strokeWidth={W} strokeDasharray={dash} strokeLinecap={st.pattern === 'dotted' ? 'round' : 'butt'} />,
+          <path key={`lg-${l.id}`} d={`M ${lx} ${ry} H ${lx + 32}`} stroke={st.color} strokeWidth={W} strokeDasharray={dash} strokeLinecap={st.pattern === 'dotted' ? 'round' : 'butt'} />,
         );
       }
       legendEls.push(
-        <text key={`lgt-${l.id}`} x={x + 42} y={ry + 4} fontSize={12} fill={th.ink}>
+        <text key={`lgt-${l.id}`} x={lx + 42} y={ry + 4} fontSize={12} fill={th.ink}>
           {l.name}
         </text>,
       );
     });
-    // Shape key: only glyphs that appear on the map.
-    const kinds: string[] = [];
-    const hasCapsule = doc.stations.some((s) => s.kind === 'step' && (dv.stationLines.get(s.id)?.length ?? 0) > 1);
-    if (doc.stations.some((s) => s.kind === 'step' && (dv.stationLines.get(s.id)?.length ?? 0) <= 1)) kinds.push('step');
-    if (hasCapsule) kinds.push('shared step');
-    if (doc.stations.some((s) => s.kind === 'merge')) kinds.push('merge');
-    if (doc.stations.some((s) => s.optional)) kinds.push('optional');
-    // Shape key starts after the longest line name (Inter 12 px ≈ 6.6 px per character).
-    const longest = Math.max(0, ...rows.map((l) => l.name.length));
-    const kx = x + Math.max(212, 42 + Math.ceil((longest * 6.6) / 8) * 8 + 40);
     kinds.forEach((kd, i) => {
-      const ry = y + i * 36;
+      const kx = x + lay.shapes[i].dx;
+      const ry = y + lay.shapes[i].dy;
       const gx = kx + 10;
       let gl: ReactNode;
       if (kd === 'step') gl = <circle cx={gx} cy={ry} r={9} fill={th.surface} stroke={th.ink} strokeWidth={3} />;

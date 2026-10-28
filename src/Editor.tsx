@@ -749,16 +749,30 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
           )}
 
           {editStation && (
-            <input
+            <textarea
               key={editStation.id}
               className="inline-edit"
-              style={{ left: (editStation.x - view.x) * view.k, top: (editStation.y - view.y) * view.k - 44 }}
+              style={{
+                left: (editStation.x - view.x) * view.k,
+                top: (editStation.y - view.y) * view.k - 44 - 16 * (editStation.label.split('\n').length - 1),
+                width: Math.min(480, Math.max(200, 32 + 7.6 * Math.max(...editStation.label.split('\n').map((r) => r.length)))),
+              }}
               defaultValue={editStation.label}
+              rows={editStation.label.split('\n').length}
+              onInput={(e) => {
+                const t = e.currentTarget;
+                t.rows = t.value.split('\n').length;
+                t.style.width = `${Math.min(480, Math.max(200, 32 + 7.6 * Math.max(...t.value.split('\n').map((r) => r.length))))}px`;
+              }}
               placeholder="Name"
               autoFocus
               onFocus={(e) => e.target.select()}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') finishEdit((e.target as HTMLInputElement).value);
+                // Enter commits; Shift+Enter adds a detail line.
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  finishEdit((e.target as HTMLTextAreaElement).value);
+                }
                 if (e.key === 'Escape') finishEdit(null);
                 e.stopPropagation();
               }}

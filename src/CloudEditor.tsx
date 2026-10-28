@@ -27,7 +27,7 @@ export default function CloudEditor({ id, onHome, onCreate, onOpen }: { id: stri
   if (error)
     return (
       <div className="loading-page">
-        <Wordmark size={17} />
+        <Wordmark />
         <p>{error}</p>
         <button onClick={onHome}>Back to all maps</button>
       </div>

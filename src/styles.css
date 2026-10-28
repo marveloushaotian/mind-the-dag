@@ -182,7 +182,9 @@ input[type='checkbox'] { accent-color: var(--ink); width: 15px; height: 15px; ma
 /* ---------------------------------------------------------------- start page */
 .home { min-height: 100%; background: var(--bg); }
 .home .topbar { height: 52px; gap: 10px; }
-.home .topbar { padding-left: 24px; }
+.home .topbar { padding-left: 22px; }
+/* The wordmark sits at the same place and size on every page, and stays still during page changes. */
+.topbar .wordmark { view-transition-name: brand; }
 .home-main { max-width: 1080px; margin: 0 auto; padding: 40px 24px 64px; }
 .home-actions { display: flex; align-items: center; gap: 10px; }
 button.big { height: 44px; padding: 0 18px; font-size: 14px; border-radius: 10px; gap: 8px; }
@@ -312,8 +314,9 @@ button.link.inline { height: auto; padding: 0; font: inherit; color: var(--ink);
 .landing-preview svg { display: block; width: 100%; height: auto; max-height: 360px; }
 .landing-side { display: flex; flex-direction: column; gap: 16px; }
 .landing-side .signin-card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 28px; box-shadow: 0 8px 32px #1a1d2110; }
-.landing-try { height: auto; flex-direction: column; align-items: flex-start; gap: 2px; padding: 14px 28px; border-radius: 16px; background: transparent; border: 1px dashed var(--line); text-align: left; font-weight: 600; }
-.landing-try:hover:not(:disabled) { background: #fff; border-style: solid; }
+.landing-try { height: auto; flex-direction: column; align-items: flex-start; gap: 2px; padding: 16px 28px; border-radius: 16px; background: #fff; border: 1px solid var(--line); box-shadow: 0 8px 32px #1a1d2110; text-align: left; font-weight: 600; }
+.landing-try:hover:not(:disabled) { background: #fff; border-color: #c9d0d6; transform: translateY(-1px); }
+.landing-try { transition: transform 160ms var(--ease-out), border-color 160ms; }
 .local-banner { margin: 0 0 24px; }
 @media (max-width: 860px) { .landing { grid-template-columns: 1fr; gap: 28px; padding: 28px 16px 48px; } .landing-side { position: static; order: -1; } .landing-intro h1 { font-size: 28px; } }
 
@@ -383,3 +386,10 @@ button { transition: background-color 120ms ease, border-color 120ms ease, color
 .signin-skeleton.short { width: 60%; }
 .join .note, .landing .note { margin: 0; font-size: 12px; line-height: 17px; color: var(--muted); }
 .join .note.warn, .landing .note.warn { color: var(--danger); }
+
+/* signed-out pages: a faint Nordic rail map behind everything (scripts/nordic-map.mjs) */
+.landing-page::before, .join-page::before {
+  content: ''; position: fixed; inset: 52px 0 0 0; z-index: 0; pointer-events: none;
+  background: url('./assets/nordic-rail.svg') center / cover no-repeat; opacity: 0.5;
+}
+.landing, .join { position: relative; z-index: 1; }

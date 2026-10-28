@@ -49,9 +49,9 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
   );
 
   return (
-    <div className="home">
+    <div className="home join-page">
       <header className="topbar">
-        <Wordmark size={17} />
+        <Wordmark />
       </header>
       <main className="join">
         {!info ? (

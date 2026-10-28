@@ -116,7 +116,7 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
 }
 
 /** The mind-the-dag wordmark: "mind-the-" in nf-core green, "dag" in ink. */
-export function Wordmark({ size = 15 }: { size?: number }) {
+export function Wordmark({ size = 17 }: { size?: number }) {
   return (
     <span className="wordmark" style={{ fontSize: size }}>
       <span className="wm-green">mind-the-</span>

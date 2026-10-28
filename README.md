@@ -76,3 +76,7 @@ an independent project and is not part of, or endorsed by, nf-core.
 ## Licence
 
 Code: MIT. Inter font files in `public/fonts`: SIL Open Font License 1.1 (see `public/fonts/OFL.txt`).
+
+The faint map behind the sign-in page is drawn by `scripts/nordic-map.mjs` from
+[Natural Earth](https://www.naturalearthdata.com) coastlines (public domain, via the
+`world-atlas` package); the rail network on it is schematic.

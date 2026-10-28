@@ -236,7 +236,7 @@ export default function Home({
   return (
     <div className={`home${landing ? ' landing-page' : ''}`}>
       <header className="topbar">
-        <Wordmark size={17} />
+        <Wordmark />
         <span className="spacer" />
         {member && <Account member={member} />}
       </header>
@@ -276,7 +276,7 @@ function Landing({ onTry }: { onTry: () => void }) {
       <section className="landing-side">
         <SignInCard />
         <button className="landing-try" onClick={onTry}>
-          <span>Try it without an account</span>
+          <span>Try it without an account →</span>
           <span className="home-hint">{drafts ? `${drafts} map${drafts === 1 ? '' : 's'} saved in this browser` : 'Maps stay in this browser only'}</span>
         </button>
       </section>

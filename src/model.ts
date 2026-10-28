@@ -259,3 +259,18 @@ export function mergeStations(d: Doc, fromId: string, intoId: string): void {
   d.edges = edges;
   d.stations = d.stations.filter((s) => s.id !== fromId);
 }
+
+/**
+ * A title not yet taken in `taken`: "Untitled pipeline", then "Untitled pipeline 2", "… 3".
+ * A title that already ends in a number keeps counting from its base.
+ */
+export function uniqueTitle(title: string, taken: Iterable<string>): string {
+  const used = new Set([...taken].map((t) => t.trim().toLowerCase()));
+  const t = title.trim() || 'Untitled pipeline';
+  if (!used.has(t.toLowerCase())) return t;
+  const base = t.replace(/\s+\d+$/, '');
+  for (let n = 2; ; n++) {
+    const c = `${base} ${n}`;
+    if (!used.has(c.toLowerCase())) return c;
+  }
+}

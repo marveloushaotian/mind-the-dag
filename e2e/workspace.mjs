@@ -62,11 +62,21 @@ try {
   await A.getByRole('button', { name: /all maps/ }).click();
   await A.getByText('Local one').waitFor();
 
-  log('Alice signs in and moves the draft to My maps');
+  log('Alice signs in: the draft moves into My maps by itself');
   await signIn(A, 'alice@example.test');
   await A.locator('.account-name', { hasText: 'Alice' }).waitFor();
-  await A.getByRole('button', { name: /Move it to My maps/ }).click();
+  await A.getByText(/Moved 1 map from this browser into My maps/).waitFor();
   await A.locator('.card-title', { hasText: 'Local one' }).waitFor();
+  if (await A.evaluate(() => JSON.parse(localStorage.getItem('mind-the-dag:index') || '[]').length)) throw new Error('draft still in this browser');
+
+  log('new maps with the same name are numbered');
+  for (const want of ['Untitled pipeline', 'Untitled pipeline 2']) {
+    await A.getByRole('button', { name: 'New map' }).click();
+    await A.waitForURL(/#\/cloud\//);
+    await A.waitForFunction((t) => document.querySelector('input[aria-label="Map title"]')?.value === t, want);
+    await A.getByRole('button', { name: /all maps/ }).click();
+    await A.locator('.card-title', { hasText: want }).first().waitFor();
+  }
 
   log('Alice makes a map in My maps');
   await A.getByRole('button', { name: 'New map' }).click();

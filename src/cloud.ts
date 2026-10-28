@@ -6,7 +6,7 @@
 import PocketBase, { ClientResponseError, LocalAuthStore, type RecordModel } from 'pocketbase';
 import { useSyncExternalStore } from 'react';
 import { transition } from './motion';
-import type { Doc } from './model';
+import { uniqueTitle, type Doc } from './model';
 
 export const LIBRARY_URL = ((import.meta.env.VITE_LIBRARY_URL as string | undefined) ?? '').replace(/\/+$/, '');
 export const cloudEnabled = LIBRARY_URL !== '';
@@ -179,11 +179,17 @@ export async function getCloudMap(id: string): Promise<CloudMap> {
   return toMap(await client().collection('maps').getOne(id, { expand: 'owner,editedBy,group' }));
 }
 
+/** New map in My maps or a group. A title already used there gets a number ("Untitled pipeline 2"). */
 export async function createCloudMap(doc: Doc, groupId: string | null = null): Promise<CloudMap> {
   const m = me();
+  const there = await client()
+    .collection('maps')
+    .getFullList({ fields: 'title', filter: groupId ? client().filter('group = {:g}', { g: groupId }) : client().filter('group = "" && owner = {:me}', { me: m.id }) })
+    .catch(() => []);
+  const title = uniqueTitle(doc.title, there.map((r) => String(r.title ?? '')));
   const r = await client()
     .collection('maps')
-    .create({ title: doc.title || 'Untitled', doc, owner: m.id, editedBy: m.id, group: groupId ?? '' }, { expand: 'owner,editedBy,group' });
+    .create({ title, doc: { ...doc, title }, owner: m.id, editedBy: m.id, group: groupId ?? '' }, { expand: 'owner,editedBy,group' });
   return toMap(r);
 }
 

@@ -3,7 +3,8 @@ import { metagenomeExample } from './examples';
 import { IDuplicate, IFile, IGroup, IPlus, ITrash, IUpload } from './icons';
 import { Wordmark } from './ui';
 import { importFile } from './importers';
-import { backupAll, deleteMap, duplicateMap, isBackup, listMaps, loadMap, requestPersistence, restoreBackup, type MapEntry } from './library';
+import { backupAll, deleteMap, duplicateMap, isBackup, listMaps, loadMap, requestPersistence, restoreBackup, retireMap, type MapEntry } from './library';
+import { moveDraftsToCloud } from './drafts';
 import { download } from './exporters';
 import { emptyDoc, type Doc } from './model';
 import { docBounds, MetroMap } from './render';
@@ -490,6 +491,12 @@ function Workspace({
     if (section === 'local' || section === 'invites') return;
     try {
       await whenSynced();
+      // Signed in, nothing stays only in this browser: drafts move into My maps first.
+      const moved = await moveDraftsToCloud().catch((e) => (setError(explain(e)), 0));
+      if (moved) {
+        setLocal(listMaps());
+        setNotice(`Moved ${moved} map${moved === 1 ? '' : 's'} from this browser into My maps.`);
+      }
       const fresh = section === 'mine' ? await listMyMaps() : await listGroupMaps(section.slice(2));
       listCache.set(section, fresh);
       setMaps(fresh);
@@ -516,8 +523,7 @@ function Workspace({
     const d = loadMap(id);
     if (!d) return;
     try {
-      await createCloudMap(d);
-      deleteMap(id);
+      retireMap(id, (await createCloudMap(d)).id);
       setLocal(listMaps());
       setNotice(`Moved “${d.title || 'Untitled'}” to My maps.`);
       if (section === 'mine') await loadMaps();
@@ -531,8 +537,7 @@ function Workspace({
       const d = loadMap(m.id);
       if (!d) continue;
       try {
-        await createCloudMap(d);
-        deleteMap(m.id);
+        retireMap(m.id, (await createCloudMap(d)).id);
         n += 1;
       } catch (e) {
         setError(explain(e));
@@ -615,9 +620,11 @@ function Workspace({
             </button>
             <OpenFileButton
               onDoc={(d) => onCreate(d, groupId)}
-              onBackup={(n, name) => {
+              onBackup={async (n, name) => {
+                const moved = await moveDraftsToCloud().catch((e) => (setError(explain(e)), 0));
                 setLocal(listMaps());
-                setNotice(`Restored ${n} draft${n === 1 ? '' : 's'} from ${name} to this browser (see On this browser).`);
+                setNotice(`Restored ${n} map${n === 1 ? '' : 's'} from ${name}${moved ? ' into My maps' : ''}.`);
+                if (section === 'mine') await loadMaps();
               }}
             />
             <button className="link" onClick={() => onCreate(metagenomeExample(), groupId)}>

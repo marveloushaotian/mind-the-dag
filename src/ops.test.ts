@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyDoc, mergeStations, pruneLines, stationAt, usedLines, type Doc } from './model';
+import { emptyDoc, mergeStations, pruneLines, stationAt, uniqueTitle, usedLines, type Doc } from './model';
 
 const st = (id: string, x: number, y: number, label = id) => ({ id, x, y, label, kind: 'step' as const, axis: 'h' as const, labelSide: 'auto' as const });
 function doc(): Doc {
@@ -64,5 +64,15 @@ describe('stationAt', () => {
     const d = doc();
     expect(stationAt(d, { x: 102, y: 3 }, new Set(['s4']))?.id).toBe('s2');
     expect(stationAt(d, { x: 150, y: 0 }, new Set())).toBeUndefined();
+  });
+});
+
+describe('uniqueTitle', () => {
+  it('numbers repeated titles', () => {
+    expect(uniqueTitle('Untitled pipeline', [])).toBe('Untitled pipeline');
+    expect(uniqueTitle('Untitled pipeline', ['Untitled pipeline'])).toBe('Untitled pipeline 2');
+    expect(uniqueTitle('Untitled pipeline', ['untitled pipeline', 'Untitled pipeline 2'])).toBe('Untitled pipeline 3');
+    expect(uniqueTitle('Untitled pipeline 2', ['Untitled pipeline 2'])).toBe('Untitled pipeline 3');
+    expect(uniqueTitle('  ', [])).toBe('Untitled pipeline');
   });
 });

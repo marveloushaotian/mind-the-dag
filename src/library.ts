@@ -8,6 +8,8 @@ import type { Doc } from './model';
 const INDEX = 'mind-the-dag:index';
 const MAP = (id: string) => `mind-the-dag:map:${id}`;
 const LEGACY = 'mind-the-dag:doc';
+/** Left behind when a draft is moved to the cloud or deleted, so an editor still open in another tab can't save it back. */
+const GONE = (id: string) => `mind-the-dag:gone:${id}`;
 
 export interface MapEntry {
   id: string;
@@ -68,6 +70,7 @@ export function loadMap(id: string): Doc | null {
 }
 
 export function saveMap(id: string, doc: Doc): void {
+  if (goneTo(id) !== undefined) return;
   write(MAP(id), doc);
   const idx = (read<MapEntry[]>(INDEX) ?? []).filter((e) => e.id !== id);
   idx.push({ id, title: doc.title, updated: Date.now() });
@@ -80,7 +83,22 @@ export function createMap(doc: Doc): string {
   return id;
 }
 
+/** Where a draft went: the cloud map's id, null if it was deleted, undefined if it is still here. */
+export function goneTo(id: string): string | null | undefined {
+  const g = read<{ to: string | null }>(GONE(id));
+  return g ? g.to : undefined;
+}
+/** The storage key that marks `id` as gone (for listening to other tabs). */
+export const goneKey = GONE;
+
+/** Remove a draft for good, remembering where it went. */
+export function retireMap(id: string, to: string | null): void {
+  write(GONE(id), { to, at: Date.now() });
+  deleteMap(id);
+}
+
 export function deleteMap(id: string): void {
+  if (goneTo(id) === undefined) write(GONE(id), { to: null, at: Date.now() });
   remove(MAP(id));
   write(
     INDEX,

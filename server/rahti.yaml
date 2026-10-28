@@ -1,5 +1,21 @@
 # mind-the-dag group library on CSC Rahti (project: mind-the-dag).
 # Import in the Rahti web console (+ > Import YAML) or `oc apply -f rahti.yaml`.
+#
+# Updates deploy themselves: the ImageStream re-imports ghcr.io/...:latest on Rahti's
+# schedule (about every 15 minutes), and the trigger on the Deployment rolls out each
+# new image. CI publishes a new image whenever server/ changes on main.
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: library-server
+spec:
+  lookupPolicy: { local: true }
+  tags:
+    - name: latest
+      from: { kind: DockerImage, name: "ghcr.io/marveloushaotian/mind-the-dag-server:latest" }
+      importPolicy: { scheduled: true }
+      referencePolicy: { type: Source }
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -15,6 +31,8 @@ kind: Deployment
 metadata:
   name: library
   labels: { app: library }
+  annotations:
+    image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"library-server:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"pocketbase\")].image"}]'
 spec:
   replicas: 1
   strategy: { type: Recreate }

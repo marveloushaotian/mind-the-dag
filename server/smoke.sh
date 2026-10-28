@@ -5,7 +5,7 @@ set -euo pipefail
 B=$1; C=$2
 j() { curl -s -H 'Content-Type: application/json' "$@"; }
 code() { curl -s -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' "$@"; }
-fail() { echo "FAIL: $*"; exit 1; }
+fail() { echo "FAIL: $*"; echo "::error title=smoke test::$(echo "$*" | tr '\n' ' ' | cut -c1-600)"; exit 1; }
 ok() { echo "ok   $*"; }
 
 for i in $(seq 1 30); do curl -sf "$B/api/health" >/dev/null && break; sleep 1; done
@@ -166,8 +166,9 @@ titled() { # title [group]
     -d "{\"title\":\"$1\",\"doc\":{\"version\":1,\"title\":\"$1\"},\"owner\":\"$A_ID\",\"editedBy\":\"$A_ID\",\"group\":\"${2:-}\"}" | jq -r .id
 }
 D1=$(titled Dup); D2=$(titled Dup); D3=$(titled "Dup 2"); GD=$(titled Dup "$G9")
-docker exec "$C" /pb/pocketbase migrate down 1 --dir=/pb_data --migrationsDir=/pb/pb_migrations >/dev/null
-docker exec "$C" /pb/pocketbase migrate up --dir=/pb_data --migrationsDir=/pb/pb_migrations >/dev/null
+out=$(docker exec "$C" /pb/pocketbase migrate down 1 --dir=/pb_data --migrationsDir=/pb/pb_migrations 2>&1) || fail "migrate down: $out"
+out=$(docker exec "$C" /pb/pocketbase migrate up --dir=/pb_data --migrationsDir=/pb/pb_migrations 2>&1) || fail "migrate up: $out"
+echo "$out"
 t() { j "$B/api/collections/maps/records/$1" -H "Authorization: $TA" | jq -r "$2"; }
 [ "$(t "$D1" .title)" = Dup ] || fail "oldest keeps its title"
 [ "$(t "$D2" .title)" = "Dup 3" ] && [ "$(t "$D2" .doc.title)" = "Dup 3" ] || fail "later repeat numbered around existing numbers ($(t "$D2" .title))"

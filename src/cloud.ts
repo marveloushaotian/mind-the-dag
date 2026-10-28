@@ -193,6 +193,16 @@ export async function createCloudMap(doc: Doc, groupId: string | null = null): P
   return toMap(r);
 }
 
+/** `title`, or the next free numbered version of it if another map in the same place has it. */
+export async function freeTitle(mapId: string, groupId: string | null, title: string): Promise<string> {
+  const m = me();
+  const place = groupId ? client().filter('group = {:g}', { g: groupId }) : client().filter('group = "" && owner = {:me}', { me: m.id });
+  const there = await client()
+    .collection('maps')
+    .getFullList({ fields: 'title', filter: `${place} && id != ${client().filter('{:id}', { id: mapId })}` });
+  return uniqueTitle(title, there.map((r) => String(r.title ?? '')));
+}
+
 export type SaveResult = { ok: true; updated: string } | { ok: false; theirs: CloudMap };
 
 /**

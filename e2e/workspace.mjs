@@ -86,6 +86,17 @@ try {
   await A.getByRole('button', { name: /all maps/ }).click();
   await A.locator('.card-title', { hasText: 'Alpha map' }).waitFor();
 
+  log('renaming a map to a name already in My maps numbers it');
+  await A.getByRole('button', { name: 'New map' }).click();
+  await A.waitForURL(/#\/cloud\//);
+  await A.getByLabel('Map title').fill('Alpha map');
+  await A.getByLabel('Map title').press('Enter');
+  await A.waitForFunction(() => document.querySelector('input[aria-label="Map title"]')?.value === 'Alpha map 2');
+  await A.getByText(/Renamed to “Alpha map 2”/).waitFor();
+  await saved(A);
+  await A.getByRole('button', { name: /all maps/ }).click();
+  await A.locator('.card-title', { hasText: 'Alpha map 2' }).waitFor();
+
   log('Alice starts a group and invites Bob');
   await A.getByRole('button', { name: 'New group' }).click();
   await A.getByRole('dialog', { name: 'New group' }).getByLabel('Name').fill('Lab');

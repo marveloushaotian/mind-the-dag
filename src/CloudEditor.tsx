@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Editor from './Editor';
-import { createCloudMap, explain, getCloudMap, primedCloudMap, updatedMs, type CloudMap } from './cloud';
+import { createCloudMap, explain, freeTitle, getCloudMap, primedCloudMap, updatedMs, type CloudMap } from './cloud';
 import { pendingEdits, useCloudSync } from './cloudSync';
 import type { Doc } from './model';
 import { Wordmark } from './ui';
@@ -134,6 +134,7 @@ function Synced({ map, onHome, onCreate, onOpen }: { map: CloudMap; onHome: () =
         sync.queue(d);
       }}
       place={{ kind: 'cloud', mapId: map.id, groupId: map.groupId, groupName: map.groupName }}
+      checkTitle={(t) => freeTitle(map.id, map.groupId, t)}
       saveState={
         <span key={sync.state} className={`save-state${sync.state === 'conflict' || sync.state === 'offline' ? ' warn' : ''}`} title={map.groupId ? 'Saved to the group' : 'Saved to My maps'}>
           {label}

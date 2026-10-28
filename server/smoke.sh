@@ -158,4 +158,20 @@ st=$(j "$B/api/settings" -H "Authorization: $SU")
 h=$(curl -s -o /dev/null -D - -H 'Origin: https://marveloushaotian.github.io' "$B/api/health" | grep -i '^access-control-allow-origin' || true)
 [ -n "$h" ] || fail "CORS header for the Pages origin"
 ok "backups, rate limits, proxy header, CORS"
+# --- one-off title renumbering (migration 1793500000), run again over repeated titles
+G9=$(j -X POST "$B/api/collections/groups/records" -H "Authorization: $TA" -d "{\"name\":\"Titles\",\"owner\":\"$A_ID\"}" | jq -r .id)
+titled() { # title [group]
+  sleep 0.05
+  j -X POST "$B/api/collections/maps/records" -H "Authorization: $TA" \
+    -d "{\"title\":\"$1\",\"doc\":{\"version\":1,\"title\":\"$1\"},\"owner\":\"$A_ID\",\"editedBy\":\"$A_ID\",\"group\":\"${2:-}\"}" | jq -r .id
+}
+D1=$(titled Dup); D2=$(titled Dup); D3=$(titled "Dup 2"); GD=$(titled Dup "$G9")
+docker exec "$C" /pb/pocketbase migrate down 1 --dir=/pb_data --migrationsDir=/pb/pb_migrations >/dev/null
+docker exec "$C" /pb/pocketbase migrate up --dir=/pb_data --migrationsDir=/pb/pb_migrations >/dev/null
+t() { j "$B/api/collections/maps/records/$1" -H "Authorization: $TA" | jq -r "$2"; }
+[ "$(t "$D1" .title)" = Dup ] || fail "oldest keeps its title"
+[ "$(t "$D2" .title)" = "Dup 3" ] && [ "$(t "$D2" .doc.title)" = "Dup 3" ] || fail "later repeat numbered around existing numbers ($(t "$D2" .title))"
+[ "$(t "$D3" .title)" = "Dup 2" ] || fail "already unique title untouched"
+[ "$(t "$GD" .title)" = Dup ] || fail "a group is its own place"
+ok "repeated titles renumbered"
 echo "smoke test passed"

@@ -274,3 +274,30 @@ export function uniqueTitle(title: string, taken: Iterable<string>): string {
     if (!used.has(c.toLowerCase())) return c;
   }
 }
+
+/**
+ * Make titles unique within one place: the oldest keeps a repeated title, later ones get the
+ * next free number. Returns the new title for each map that changes. (Mirrored by the server
+ * migration 1793500000_unique_titles.js.)
+ */
+export function renumberTitles(maps: { id: string; title: string; created: string }[]): Map<string, string> {
+  const norm = (t: string) => t.trim().toLowerCase();
+  const sorted = [...maps].sort((a, b) => (a.created < b.created ? -1 : 1));
+  const used = new Set<string>();
+  const later: typeof maps = [];
+  for (const m of sorted) {
+    const t = m.title.trim() || 'Untitled pipeline';
+    if (used.has(norm(t))) later.push(m);
+    else used.add(norm(t));
+  }
+  const out = new Map<string, string>();
+  for (const m of later) {
+    const base = (m.title.trim() || 'Untitled pipeline').replace(/\s+\d+$/, '');
+    let n = 2;
+    while (used.has(norm(`${base} ${n}`))) n++;
+    const title = `${base} ${n}`;
+    used.add(norm(title));
+    out.set(m.id, title);
+  }
+  return out;
+}

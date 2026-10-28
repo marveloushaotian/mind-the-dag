@@ -37,6 +37,7 @@ export default function Editor({
   banner,
   onHome,
   onCreate,
+  checkTitle,
   onMoveToCloud,
 }: {
   initial: Doc;
@@ -47,6 +48,8 @@ export default function Editor({
   banner?: ReactNode;
   onHome: () => void;
   onCreate: (d: Doc) => void;
+  /** Cloud maps: the title to use instead of `title` if another map in the same place has it. */
+  checkTitle?: (title: string) => Promise<string>;
   /** Local maps, signed in: move this map into My maps. */
   onMoveToCloud?: () => Promise<void>;
 }) {
@@ -135,6 +138,28 @@ export default function Editor({
   }, [fit, initial]);
 
   // ---------------------------------------------------------------- file actions
+  // Finishing a rename: a title another map here already has gets the next free number.
+  const titleAtFocus = useRef<string | null>(null);
+  const commitTitle = async () => {
+    const typed = doc.title;
+    if (!checkTitle || typed === titleAtFocus.current) return;
+    titleAtFocus.current = typed;
+    try {
+      const free = await checkTitle(typed);
+      if (free !== typed) {
+        update((d) => {
+          if (d.title === typed) d.title = free;
+        });
+        titleAtFocus.current = free;
+        flash(`Renamed to “${free}”: another map here is called “${typed.trim()}”.`);
+      }
+    } catch {
+      /* offline: keep the name as typed */
+    }
+  };
+  useEffect(() => {
+    titleAtFocus.current = doc.title;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const newMap = () => onCreate(emptyDoc());
   const openExample = () => onCreate(metagenomeExample());
   const downloadMapFile = () => download(`${slug(doc.title)}.json`, new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }));
@@ -667,7 +692,16 @@ export default function Editor({
           <Wordmark />
         </button>
         <span className="divider" aria-hidden="true" />
-        <input ref={titleRef} className="doc-title" value={doc.title} onChange={(e) => update((d) => void (d.title = e.target.value), 'title')} aria-label="Map title" spellCheck={false} />
+        <input
+          ref={titleRef}
+          className="doc-title"
+          value={doc.title}
+          onChange={(e) => update((d) => void (d.title = e.target.value), 'title')}
+          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+          onBlur={() => void commitTitle()}
+          aria-label="Map title"
+          spellCheck={false}
+        />
         {place.kind === 'cloud' && place.groupName && (
           <span
             className="place-pill"

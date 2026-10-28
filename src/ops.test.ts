@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyDoc, mergeStations, pruneLines, stationAt, uniqueTitle, usedLines, type Doc } from './model';
+import { emptyDoc, mergeStations, pruneLines, renumberTitles, stationAt, uniqueTitle, usedLines, type Doc } from './model';
 
 const st = (id: string, x: number, y: number, label = id) => ({ id, x, y, label, kind: 'step' as const, axis: 'h' as const, labelSide: 'auto' as const });
 function doc(): Doc {
@@ -74,5 +74,19 @@ describe('uniqueTitle', () => {
     expect(uniqueTitle('Untitled pipeline', ['untitled pipeline', 'Untitled pipeline 2'])).toBe('Untitled pipeline 3');
     expect(uniqueTitle('Untitled pipeline 2', ['Untitled pipeline 2'])).toBe('Untitled pipeline 3');
     expect(uniqueTitle('  ', [])).toBe('Untitled pipeline');
+  });
+});
+
+describe('renumberTitles', () => {
+  it('keeps the oldest name and numbers later repeats around existing numbers', () => {
+    const r = renumberTitles([
+      { id: 'c', title: 'Untitled pipeline 2', created: '2026-10-28 14:58' },
+      { id: 'a', title: 'Untitled pipeline', created: '2026-10-28 10:00' },
+      { id: 'b', title: 'Untitled pipeline', created: '2026-10-28 12:00' },
+      { id: 't1', title: 'TEDPLEX workflow overview', created: '2026-10-28 08:00' },
+      { id: 't2', title: 'TEDPLEX workflow overview', created: '2026-10-28 15:00' },
+      { id: 'u', title: 'mag-lite', created: '2026-10-28 09:00' },
+    ]);
+    expect(Object.fromEntries(r)).toEqual({ b: 'Untitled pipeline 3', t2: 'TEDPLEX workflow overview 2' });
   });
 });

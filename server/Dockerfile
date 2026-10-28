@@ -13,8 +13,9 @@ RUN apk add --no-cache ca-certificates unzip wget \
  && mkdir -p /pb_data && chgrp -R 0 /pb_data && chmod -R g=u /pb_data
 
 COPY pb_migrations /pb/pb_migrations
+COPY pb_hooks /pb/pb_hooks
 
 EXPOSE 8090
 ENV ORIGINS="https://marveloushaotian.github.io"
 
-CMD ["sh", "-c", "exec /pb/pocketbase serve --http=0.0.0.0:8090 --dir=/pb_data --migrationsDir=/pb/pb_migrations --automigrate=false --origins=\"$ORIGINS\""]
+CMD ["sh", "-c", "exec /pb/pocketbase serve --http=0.0.0.0:8090 --dir=/pb_data --migrationsDir=/pb/pb_migrations --hooksDir=/pb/pb_hooks --hooksWatch=false --automigrate=false --origins=\"$ORIGINS\""]

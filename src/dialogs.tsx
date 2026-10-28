@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { IClose } from './icons';
 import type { Doc } from './model';
 import { shareUrl } from './share';
-import { cloudEnabled, createCloudMap, explain, listMyGroups, PROVIDER_LABEL, signIn, signInProviders, signInWith, useMember, type Group, type Provider } from './cloud';
+import { cloudEnabled, createCloudMap, explain, listMyGroups, providerNames, PROVIDER_LABEL, signIn, signInProviders, signInWith, useMember, type Group, type Provider } from './cloud';
 import type { Place } from './Editor';
 
 export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -182,7 +182,9 @@ export function SignInDialog({ onClose }: { onClose: () => void }) {
         )
       )}
       {error && <p className="note warn">{error}</p>}
-      <p className="note">New here? Someone in your group invites your email address; then sign in with the GitHub or Google account that uses it.</p>
+      {providers && providers.length > 0 && (
+        <p className="note">New here? Someone in your group invites your email address; then sign in with the {providerNames(providers)} account that uses it.</p>
+      )}
     </Modal>
   );
 }

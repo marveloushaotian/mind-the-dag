@@ -78,6 +78,9 @@ export async function signInProviders(): Promise<Provider[]> {
   }
 }
 
+/** "GitHub", "GitHub or Google", … for instructions shown to people. */
+export const providerNames = (p: Provider[]) => p.map((x) => PROVIDER_LABEL[x]).join(' or ') || 'GitHub';
+
 export async function signInWith(provider: Provider): Promise<void> {
   try {
     await client().collection('users').authWithOAuth2({ provider });

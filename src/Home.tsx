@@ -29,6 +29,9 @@ import {
   signOut,
   updatedMs,
   useMember,
+  providerNames,
+  signInProviders,
+  type Provider,
   type CloudMap,
   type Group,
   type GroupMember,
@@ -774,6 +777,8 @@ function GroupDialog({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [providers, setProviders] = useState<Provider[]>([]);
+  useEffect(() => void signInProviders().then(setProviders), []);
   const load = useCallback(async () => {
     try {
       const [m, p] = await Promise.all([listMembers(group.id), listGroupInvitations(group.id)]);
@@ -833,7 +838,7 @@ function GroupDialog({
             void run(async () => {
               await invite(group.id, to);
               setEmail('');
-              setNotice(`Invited ${to.toLowerCase()}. No email is sent: tell them to open ${site} and sign in with the GitHub or Google account that uses this address.`);
+              setNotice(`Invited ${to.toLowerCase()}. No email is sent: tell them to open ${site} and sign in with the ${providerNames(providers)} account that uses this address.`);
               await load();
             });
           }}

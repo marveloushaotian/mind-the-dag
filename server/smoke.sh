@@ -166,7 +166,7 @@ titled() { # title [group]
     -d "{\"title\":\"$1\",\"doc\":{\"version\":1,\"title\":\"$1\"},\"owner\":\"$A_ID\",\"editedBy\":\"$A_ID\",\"group\":\"${2:-}\"}" | jq -r .id
 }
 D1=$(titled Dup); D2=$(titled Dup); D3=$(titled "Dup 2"); GD=$(titled Dup "$G9")
-out=$(docker exec "$C" /pb/pocketbase migrate down 1 --dir=/pb_data --migrationsDir=/pb/pb_migrations 2>&1) || fail "migrate down: $out"
+out=$(echo y | docker exec -i "$C" /pb/pocketbase migrate down 1 --dir=/pb_data --migrationsDir=/pb/pb_migrations 2>&1) || fail "migrate down: $out"
 echo "::notice title=migrate down::$(echo "$out" | tr '\n' ' ' | cut -c1-400)"
 out=$(docker exec "$C" /pb/pocketbase migrate up --dir=/pb_data --migrationsDir=/pb/pb_migrations 2>&1) || fail "migrate up: $out"
 echo "::notice title=migrate up::$(echo "$out" | tr '\n' ' ' | cut -c1-400)"

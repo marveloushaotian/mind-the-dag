@@ -100,9 +100,37 @@ g=$(j "$B/api/collections/maps/records/$MB" -H "Authorization: $SU" | jq -r .gro
 [ "$(code "$B/api/collections/maps/records/$MB" -H "Authorization: $TB")" = 200 ] || fail "author keeps map after group delete"
 ok "group delete keeps maps"
 
-# --- sign-up is invite-only and OAuth-only
+# --- sign-up only through an invitation link from the admin
 s=$(code -X POST "$B/api/collections/users/records" -d '{"email":"x@example.test","password":"ci-user-pass-123","passwordConfirm":"ci-user-pass-123"}')
-[ "$s" != 200 ] || fail "password sign-up"; ok "no password sign-up"
+[ "$s" != 200 ] || fail "sign-up without a link"
+s=$(code -X POST "$B/api/collections/invitations/records" -H "Authorization: $TA" -d "{\"group\":\"$(j -X POST "$B/api/collections/groups/records" -H "Authorization: $TA" -d "{\"name\":\"Lab2\",\"owner\":\"$A_ID\"}" | jq -r .id)\",\"email\":\"nobody@example.test\",\"invitedBy\":\"$A_ID\"}")
+[ "$s" = 400 ] || fail "group invitation for an email without an account (got $s)"
+[ "$(code -X POST "$B/api/collections/signups/records" -H "Authorization: $TA" -d "{\"createdBy\":\"$A_ID\"}")" != 200 ] || fail "non-admin creates a link"
+j -X PATCH "$B/api/collections/users/records/$A_ID" -H "Authorization: $SU" -d '{"admin":true}' >/dev/null
+[ "$(code -X PATCH "$B/api/collections/users/records/$B_ID" -H "Authorization: $TB" -d '{"admin":true}')" != 200 ] || fail "member makes self admin"
+TA=$(login a@example.test)
+G2=$(j -X POST "$B/api/collections/groups/records" -H "Authorization: $TA" -d "{\"name\":\"Lab3\",\"owner\":\"$A_ID\"}" | jq -r .id)
+L=$(j -X POST "$B/api/collections/signups/records" -H "Authorization: $TA" -d "{\"createdBy\":\"$A_ID\",\"note\":\"Dave\",\"group\":\"$G2\",\"code\":\"chosen-by-client\"}")
+CODE=$(echo "$L" | jq -r .code); LID=$(echo "$L" | jq -r .id)
+[ "$CODE" != null ] && [ "$CODE" != chosen-by-client ] && [ ${#CODE} -ge 32 ] || fail "admin creates a link with a server-made code ($CODE)"
+info=$(j "$B/api/mtd/signups/$CODE")
+[ "$(echo "$info" | jq -r .valid)" = true ] && [ "$(echo "$info" | jq -r .group)" = Lab3 ] || fail "link info ($info)"
+[ "$(j "$B/api/mtd/signups/nope" | jq -r .valid)" = false ] || fail "unknown link reported valid"
+s=$(code -X POST "$B/api/collections/users/records" -d "{\"email\":\"dave@example.test\",\"password\":\"ci-user-pass-123\",\"passwordConfirm\":\"ci-user-pass-123\",\"name\":\"Dave\",\"inviteCode\":\"$CODE\",\"admin\":true}")
+[ "$s" = 200 ] || fail "sign-up with a link (got $s)"
+TD=$(login dave@example.test); D_ID=$(j "$B/api/collections/users/records?filter=email%3D%27dave%40example.test%27" -H "Authorization: $SU" | jq -r '.items[0].id')
+[ "$(j "$B/api/collections/users/records/$D_ID" -H "Authorization: $SU" | jq -r .admin)" = false ] || fail "sign-up cannot make itself admin"
+[ "$(j "$B/api/collections/users/records/$D_ID" -H "Authorization: $SU" | jq -r .inviteCode)" = "" ] || fail "invite code cleared after sign-up"
+[ "$(count memberships "$TD" "&filter=group%3D%27$G2%27")" -ge 1 ] || fail "joined the link's group"
+[ "$(j "$B/api/mtd/signups/$CODE" | jq -r .valid)" = false ] || fail "link used up"
+s=$(code -X POST "$B/api/collections/users/records" -d "{\"email\":\"eve@example.test\",\"password\":\"ci-user-pass-123\",\"passwordConfirm\":\"ci-user-pass-123\",\"inviteCode\":\"$CODE\"}")
+[ "$s" != 200 ] || fail "second sign-up with a used link"
+L2=$(j -X POST "$B/api/collections/signups/records" -H "Authorization: $TA" -d "{\"createdBy\":\"$A_ID\",\"group\":\"$G2\"}" | jq -r .code)
+[ "$(code -X POST "$B/api/mtd/signups/$L2/accept" -H "Authorization: $TC")" = 200 ] || fail "existing member accepts a link"
+[ "$(count memberships "$TC" "&filter=group%3D%27$G2%27")" -ge 1 ] || fail "existing member joined via link"
+[ "$(count signups "$TC")" = 0 ] || fail "links visible to others"
+[ "$(code -X DELETE "$B/api/collections/signups/records/$LID" -H "Authorization: $TA")" = 204 ] || fail "admin revokes a link"
+ok "invitation links"
 
 # --- settings and CORS
 st=$(j "$B/api/settings" -H "Authorization: $SU")

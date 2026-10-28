@@ -87,3 +87,140 @@ routerAdd(
   },
   $apis.requireAuth("users"),
 );
+
+// ---------------------------------------------------------------- invitation links (sign-up)
+
+// A new link: the server makes the code and the expiry (14 days); a group must be one of yours.
+onRecordCreateRequest((e) => {
+  e.record.set("code", $security.randomString(32));
+  e.record.set("expires", new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString().replace("T", " "));
+  e.record.set("usedBy", "");
+  const g = e.record.getString("group");
+  if (g && !e.hasSuperuserAuth()) {
+    let member = true;
+    try {
+      e.app.findFirstRecordByFilter("memberships", "group = {:g} && user = {:u}", { g: g, u: e.auth.id });
+    } catch (_) {
+      member = false;
+    }
+    if (!member) throw new ForbiddenError("You can only invite people into your own groups.");
+  }
+  e.next();
+}, "signups");
+
+// New accounts need an unused, unexpired invitation link (superusers excepted).
+onRecordCreateRequest((e) => {
+  if (!e.hasSuperuserAuth()) {
+    const code = e.record.getString("inviteCode");
+    let ok = false;
+    if (code) {
+      try {
+        const s = e.app.findFirstRecordByFilter("signups", "code = {:c} && usedBy = ''", { c: code });
+        ok = new Date(s.getString("expires").replace(" ", "T")) > new Date();
+      } catch (_) {
+        ok = false;
+      }
+    }
+    if (!ok) throw new BadRequestError("An invitation link is needed to create an account, and this one is not valid any more.");
+    e.record.set("admin", false);
+  }
+  e.next();
+}, "users");
+
+// After sign-up: the link is used up, and its group (if any) is joined.
+onRecordAfterCreateSuccess((e) => {
+  const code = e.record.getString("inviteCode");
+  if (code) {
+    try {
+      const s = e.app.findFirstRecordByFilter("signups", "code = {:c}", { c: code });
+      s.set("usedBy", e.record.id);
+      e.app.save(s);
+      const g = s.getString("group");
+      if (g) {
+        const m = new Record(e.app.findCollectionByNameOrId("memberships"));
+        m.set("group", g);
+        m.set("user", e.record.id);
+        m.set("role", "member");
+        e.app.save(m);
+      }
+    } catch (err) {
+      e.app.logger().warn("sign-up link not applied", "error", String(err));
+    }
+    e.record.set("inviteCode", "");
+    e.app.save(e.record);
+  }
+  e.next();
+}, "users");
+
+// Group invitations by email are for people who already have an account.
+onRecordCreateRequest((e) => {
+  const email = e.record.getString("email").trim().toLowerCase();
+  let exists = true;
+  try {
+    e.app.findFirstRecordByFilter("users", "email = {:e}", { e: email });
+  } catch (_) {
+    exists = false;
+  }
+  if (!exists) throw new BadRequestError("No one has an account with this email yet. New people join through an invitation link from the admin.");
+  e.next();
+}, "invitations");
+
+// What a link is for (no sign-in needed): shown on the join page.
+routerAdd("GET", "/api/mtd/signups/{code}", (e) => {
+  let s;
+  try {
+    s = $app.findFirstRecordByFilter("signups", "code = {:c}", { c: e.request.pathValue("code") });
+  } catch (_) {
+    return e.json(200, { valid: false, reason: "unknown" });
+  }
+  const expired = new Date(s.getString("expires").replace(" ", "T")) <= new Date();
+  const used = s.getString("usedBy") !== "";
+  let inviter = "Someone";
+  let group = "";
+  try {
+    inviter = $app.findRecordById("users", s.getString("createdBy")).getString("name") || inviter;
+  } catch (_) {}
+  try {
+    if (s.getString("group")) group = $app.findRecordById("groups", s.getString("group")).getString("name");
+  } catch (_) {}
+  return e.json(200, { valid: !expired && !used, reason: used ? "used" : expired ? "expired" : "", inviter: inviter, group: group });
+});
+
+// Someone who already has an account opens a link: join its group and use the link up.
+routerAdd(
+  "POST",
+  "/api/mtd/signups/{code}/accept",
+  (e) => {
+    let s;
+    try {
+      s = $app.findFirstRecordByFilter("signups", "code = {:c}", { c: e.request.pathValue("code") });
+    } catch (_) {
+      throw new NotFoundError("This invitation link does not exist.");
+    }
+    const used = s.getString("usedBy");
+    if (used && used !== e.auth.id) throw new BadRequestError("This invitation link has already been used.");
+    if (new Date(s.getString("expires").replace(" ", "T")) <= new Date()) throw new BadRequestError("This invitation link has expired.");
+    const g = s.getString("group");
+    $app.runInTransaction((tx) => {
+      if (g) {
+        let exists = true;
+        try {
+          tx.findFirstRecordByFilter("memberships", "group = {:g} && user = {:u}", { g: g, u: e.auth.id });
+        } catch (_) {
+          exists = false;
+        }
+        if (!exists) {
+          const m = new Record(tx.findCollectionByNameOrId("memberships"));
+          m.set("group", g);
+          m.set("user", e.auth.id);
+          m.set("role", "member");
+          tx.save(m);
+        }
+      }
+      s.set("usedBy", e.auth.id);
+      tx.save(s);
+    });
+    return e.json(200, { group: g });
+  },
+  $apis.requireAuth("users"),
+);

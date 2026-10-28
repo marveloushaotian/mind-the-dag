@@ -251,7 +251,7 @@ textarea { height: auto; padding: 6px 10px; resize: vertical; line-height: 18px;
 .view-byline { font-size: 12px; color: var(--faint); }
 
 /* cloud workspace */
-.workspace { display: grid; grid-template-columns: 232px 1fr; min-height: calc(100% - 52px); }
+.workspace { display: grid; grid-template-columns: 232px 1fr; min-height: calc(100vh - 52px); }
 .workspace .home-main { margin: 0; max-width: 1080px; padding-top: 28px; }
 .side { border-right: 1px solid var(--line); background: var(--panel); padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; }
 .side-item { justify-content: flex-start; height: 34px; border: 0; background: transparent; border-radius: 8px; padding: 0 12px; font-weight: 500; color: var(--ink); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

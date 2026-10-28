@@ -29,7 +29,10 @@ async function signIn(page, email) {
   await dlg.getByRole('button', { name: 'Sign in' }).click();
   await dlg.waitFor({ state: 'detached' });
 }
-const saved = (page) => page.locator('.save-state', { hasText: /^Saved$/ }).waitFor();
+const saved = async (page) => {
+  await sleep(800); // the first save starts a moment after the last keystroke
+  await page.locator('.save-state', { hasText: /^Saved$/ }).waitFor();
+};
 
 const browser = await chromium.launch();
 try {

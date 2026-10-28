@@ -34,6 +34,20 @@ const writePending = (id: string, p: Pending | null) => {
   }
 };
 
+// Saves still running after an editor closed; the start page waits for them before listing maps.
+const inflight = new Set<Promise<unknown>>();
+const track = <T,>(p: Promise<T>) => {
+  inflight.add(p);
+  void p.finally(() => inflight.delete(p));
+  return p;
+};
+/** Resolves once saves from editors that just closed have finished (at most a few seconds). */
+export async function whenSynced(maxMs = 6000): Promise<void> {
+  const until = Date.now() + maxMs;
+  await new Promise((r) => setTimeout(r, 0)); // let closing editors queue their last edit
+  while (inflight.size && Date.now() < until) await Promise.race([...inflight, new Promise((r) => setTimeout(r, 200))]);
+}
+
 export function useCloudSync(map: CloudMap) {
   const [state, setState] = useState<SyncState>(() => (pendingEdits(map.id, map.updated) ? 'saving' : 'saved'));
   const [theirs, setTheirs] = useState<CloudMap | null>(null);
@@ -95,7 +109,25 @@ export function useCloudSync(map: CloudMap) {
     return () => {
       window.removeEventListener('online', now);
       window.removeEventListener('pagehide', now);
-      void flush();
+      // Runs after the editor's own last save (child clean-ups come first or last depending on React's order).
+      track(
+        new Promise<void>((resolve) =>
+          setTimeout(() => {
+            void (async () => {
+              for (let i = 0; i < 40; i++) {
+                if (blocked.current || (!busy.current && !pending.current)) break;
+                if (busy.current) {
+                  await new Promise((r) => setTimeout(r, 150));
+                  continue;
+                }
+                await flush();
+                if (pending.current && !busy.current) break; // failed (offline): kept in this browser for next time
+              }
+              resolve();
+            })();
+          }, 0),
+        ),
+      );
     };
   }, [flush]);
 

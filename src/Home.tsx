@@ -35,6 +35,7 @@ import {
   type Invitation,
   type Member,
 } from './cloud';
+import { whenSynced } from './cloudSync';
 
 const SECTION_KEY = 'mind-the-dag:section';
 
@@ -375,6 +376,7 @@ function Workspace({
     if (section === 'local' || section === 'invites') return;
     setMaps(null);
     try {
+      await whenSynced();
       setMaps(section === 'mine' ? await listMyMaps() : await listGroupMaps(section.slice(2)));
     } catch (e) {
       setError(explain(e));

@@ -425,8 +425,10 @@ function Workspace({
       return 'mine';
     }
   });
-  const setSection = (s: Section) => {
+  // `also` lands in the same render, so the fallback below never sees a half-updated sidebar.
+  const setSection = (s: Section, also?: () => void) => {
     transition(() => {
+      also?.();
       setSectionState(s);
       setMaps(listCache.get(s) ?? null);
     });
@@ -436,6 +438,8 @@ function Workspace({
       /* ignore */
     }
   };
+  const setSectionRef = useRef(setSection);
+  setSectionRef.current = setSection;
   const [groups, setGroupsState] = useState<Group[] | null>(sideCache.groups);
   const [invites, setInvitesState] = useState<Invitation[]>(sideCache.invites);
   const setGroups = (g: Group[]) => setGroupsState((sideCache.groups = g));
@@ -453,11 +457,16 @@ function Workspace({
   const groupId = section.startsWith('g:') ? section.slice(2) : null;
   const group = groups?.find((g) => g.id === groupId) ?? null;
 
-  const loadSide = useCallback(async () => {
+  /** Reload groups and invitations; with `next`, switch to that section in the same update. */
+  const loadSide = useCallback(async (next?: Section) => {
     try {
       const [g, i] = await Promise.all([listMyGroups(), listMyInvitations()]);
-      setGroups(g);
-      setInvites(i);
+      const apply = () => {
+        setGroups(g);
+        setInvites(i);
+      };
+      if (next) setSectionRef.current(next, apply);
+      else apply();
     } catch (e) {
       setError(explain(e));
       setGroups([]);
@@ -623,8 +632,7 @@ function Workspace({
                 key={i.id}
                 inv={i}
                 onDone={async (joined) => {
-                  await loadSide();
-                  if (joined) setSection(`g:${joined}`);
+                  await loadSide(joined ? `g:${joined}` : undefined);
                 }}
                 onError={setError}
               />
@@ -724,8 +732,7 @@ function Workspace({
           onClose={() => setNewGroup(false)}
           onCreated={async (id) => {
             setNewGroup(false);
-            await loadSide();
-            setSection(`g:${id}`);
+            await loadSide(`g:${id}`);
             setManaging(true);
           }}
         />
@@ -735,11 +742,10 @@ function Workspace({
           group={group}
           member={member}
           onClose={() => setManaging(false)}
-          onChanged={loadSide}
+          onChanged={() => loadSide()}
           onGone={async () => {
             setManaging(false);
-            await loadSide();
-            setSection('mine');
+            await loadSide('mine');
           }}
           onNewLink={() => {
             setManaging(false);

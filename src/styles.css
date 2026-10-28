@@ -367,3 +367,17 @@ button { transition: background-color 120ms ease, border-color 120ms ease, color
   *, *::before, *::after { animation: none !important; transition: none !important; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }
+
+/* invitation links and the join page */
+.side-invite { margin-top: 12px; color: var(--accent-ink); gap: 6px; }
+.side .spacer { flex: 1; }
+.join { max-width: 520px; margin: 0 auto; padding: 56px 16px 64px; }
+.join-card.signin-card, .join-card > .signin-card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 28px; box-shadow: 0 8px 32px #1a1d2110; }
+.join-card { display: flex; flex-direction: column; gap: 12px; }
+.join-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.btn-email { background: #fff; border-color: var(--line); color: var(--ink); }
+.btn-email.on { border-color: var(--ink); }
+.join-form { margin-top: 4px; }
+.signin-skeleton.short { width: 60%; }
+.join .note, .landing .note { margin: 0; font-size: 12px; line-height: 17px; color: var(--muted); }
+.join .note.warn, .landing .note.warn { color: var(--danger); }

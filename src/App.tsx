@@ -3,6 +3,7 @@ import CloudEditor from './CloudEditor';
 import Editor from './Editor';
 import Home from './Home';
 import Viewer from './Viewer';
+import Join from './Join';
 import { createCloudMap, explain, refreshSession, useMember } from './cloud';
 import { createMap, deleteMap, loadMap, saveMap } from './library';
 import type { Doc } from './model';
@@ -13,13 +14,15 @@ import { setOpenMap, transition } from './motion';
  * Routes: `#/` start page, `#/map/<id>` a map in this browser, `#/cloud/<id>` a map in the
  * cloud workspace, `#/view/<code>` a shared view-only link.
  */
-type Route = { kind: 'home' } | { kind: 'local'; id: string } | { kind: 'cloud'; id: string } | { kind: 'view'; code: string };
+type Route = { kind: 'home' } | { kind: 'join'; code: string } | { kind: 'local'; id: string } | { kind: 'cloud'; id: string } | { kind: 'view'; code: string };
 function route(): Route {
   const h = window.location.hash;
   let m = h.match(/^#\/map\/([\w-]+)/);
   if (m) return { kind: 'local', id: m[1] };
   m = h.match(/^#\/(?:cloud|group)\/([\w-]+)/);
   if (m) return { kind: 'cloud', id: m[1] };
+  m = h.match(/^#\/join\/([\w-]+)/);
+  if (m) return { kind: 'join', code: m[1] };
   m = h.match(/^#\/view\/([\w-]+)/);
   if (m) return { kind: 'view', code: m[1] };
   return { kind: 'home' };
@@ -65,6 +68,20 @@ export default function App() {
   }, [r]);
   const loadCode = useCallback(() => decodeDoc(r.kind === 'view' ? r.code : ''), [r]);
 
+  if (r.kind === 'join')
+    return (
+      <Join
+        code={r.code}
+        onDone={(groupId) => {
+          try {
+            localStorage.setItem(SECTION_KEY, groupId ? `g:${groupId}` : 'mine');
+          } catch {
+            /* ignore */
+          }
+          goHome();
+        }}
+      />
+    );
   if (r.kind === 'view') return <Viewer load={loadCode} onHome={goHome} onCopy={(d) => void create(d)} />;
   if (r.kind === 'cloud') return <CloudEditor id={r.id} onHome={goHome} onCreate={(d) => void create(d)} onOpen={openCloud} />;
   const doc = r.kind === 'local' ? loadMap(r.id) : null;

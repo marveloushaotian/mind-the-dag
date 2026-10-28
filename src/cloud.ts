@@ -24,9 +24,13 @@ export interface Member {
   id: string;
   name: string;
   email: string;
+  /** The site admin: the only one who can create invitation links for new people. */
+  admin: boolean;
 }
 const toMember = (r: RecordModel | null | undefined): Member | null =>
-  r && r.collectionName === 'users' ? { id: r.id, name: (r.name as string) || (r.email as string) || 'Member', email: (r.email as string) || '' } : null;
+  r && r.collectionName === 'users'
+    ? { id: r.id, name: (r.name as string) || (r.email as string) || 'Member', email: (r.email as string) || '', admin: !!r.admin }
+    : null;
 
 export const currentMember = (): Member | null => (pb?.authStore.isValid ? toMember(pb.authStore.record) : null);
 
@@ -35,7 +39,7 @@ let memberSnapshot: Member | null = currentMember();
 const memberListeners = new Set<() => void>();
 pb?.authStore.onChange(() => {
   const next = currentMember();
-  if (next?.id === memberSnapshot?.id && next?.name === memberSnapshot?.name && next?.email === memberSnapshot?.email) return;
+  if (next?.id === memberSnapshot?.id && next?.name === memberSnapshot?.name && next?.email === memberSnapshot?.email && next?.admin === memberSnapshot?.admin) return;
   transition(() => {
     memberSnapshot = next;
     memberListeners.forEach((l) => l());
@@ -97,9 +101,7 @@ export async function signInWith(provider: Provider): Promise<void> {
     await client().collection('users').authWithOAuth2({ provider });
   } catch (e) {
     if (e instanceof ClientResponseError && e.status === 400)
-      throw new Error(
-        `No account or invitation matches the email of this ${PROVIDER_LABEL[provider]} account. Ask someone in your group to invite that email address.`,
-      );
+      throw new Error(`No account is linked to this ${PROVIDER_LABEL[provider]} account yet. New people join through an invitation link from the admin.`);
     if (e instanceof ClientResponseError && e.isAbort) throw new Error('Sign-in was cancelled.');
     throw new Error(explain(e));
   }
@@ -297,4 +299,76 @@ export async function acceptInvitation(id: string): Promise<string> {
 /** Decline (invitee) or withdraw (inviter / group owner). */
 export async function deleteInvitation(id: string): Promise<void> {
   await client().collection('invitations').delete(id);
+}
+
+// ---------------------------------------------------------------- invitation links (new people)
+export interface SignupLink {
+  id: string;
+  code: string;
+  note: string;
+  groupId: string | null;
+  groupName: string | null;
+  expires: string;
+  usedByName: string | null;
+}
+export interface SignupInfo {
+  valid: boolean;
+  reason: '' | 'used' | 'expired' | 'unknown';
+  inviter: string;
+  group: string;
+}
+const toLink = (r: RecordModel): SignupLink => ({
+  id: r.id,
+  code: r.code as string,
+  note: (r.note as string) || '',
+  groupId: (r.group as string) || null,
+  groupName: nameOf(r.expand?.group),
+  expires: r.expires as string,
+  usedByName: nameOf(r.expand?.usedBy) ?? ((r.usedBy as string) ? 'someone' : null),
+});
+export const joinUrl = (code: string) => `${window.location.origin}${window.location.pathname}#/join/${code}`;
+
+export async function createSignupLink(note: string, groupId: string | null): Promise<SignupLink> {
+  const r = await client()
+    .collection('signups')
+    .create({ note: note.trim(), group: groupId ?? '', createdBy: me().id }, { expand: 'group,usedBy' });
+  return toLink(r);
+}
+export async function listSignupLinks(): Promise<SignupLink[]> {
+  const items = await client().collection('signups').getFullList({ sort: '-created', expand: 'group,usedBy' });
+  return items.map(toLink);
+}
+export async function deleteSignupLink(id: string): Promise<void> {
+  await client().collection('signups').delete(id);
+}
+export async function signupInfo(code: string): Promise<SignupInfo> {
+  return client().send<SignupInfo>(`/api/mtd/signups/${encodeURIComponent(code)}`, { method: 'GET' });
+}
+/** An existing member uses a link: joins its group (if any). Returns the group id or ''. */
+export async function acceptSignupLink(code: string): Promise<string> {
+  const r = await client().send<{ group: string }>(`/api/mtd/signups/${encodeURIComponent(code)}/accept`, { method: 'POST' });
+  return r.group;
+}
+export async function signUpWithPassword(code: string, name: string, email: string, password: string): Promise<void> {
+  try {
+    await client()
+      .collection('users')
+      .create({ name: name.trim(), email: email.trim(), password, passwordConfirm: password, inviteCode: code });
+  } catch (e) {
+    throw new Error(explain(e, 'Could not create the account.'));
+  }
+  await signIn(email, password);
+}
+/** Sign up (or, with an existing account, sign in and join) through GitHub. */
+export async function signUpWith(provider: Provider, code: string): Promise<void> {
+  let isNew = false;
+  try {
+    const r = await client().collection('users').authWithOAuth2({ provider, createData: { inviteCode: code } });
+    isNew = !!(r.meta as { isNew?: boolean } | undefined)?.isNew;
+  } catch (e) {
+    if (e instanceof ClientResponseError && e.status === 400) throw new Error('This invitation link is no longer valid. Ask the admin for a new one.');
+    if (e instanceof ClientResponseError && e.isAbort) throw new Error('Sign-in was cancelled.');
+    throw new Error(explain(e));
+  }
+  if (!isNew) await acceptSignupLink(code).catch(() => undefined);
 }

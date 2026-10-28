@@ -40,11 +40,11 @@ const browser = await chromium.launch();
 try {
   log('create accounts (admin)');
   const su = (await api('/api/collections/_superusers/auth-with-password', { method: 'POST', body: JSON.stringify({ identity: SU_EMAIL, password: SU_PASS }) })).token;
-  for (const [email, name] of [
-    ['alice@example.test', 'Alice'],
-    ['bob@example.test', 'Bob'],
+  for (const [email, name, admin] of [
+    ['alice@example.test', 'Alice', true],
+    ['bob@example.test', 'Bob', false],
   ])
-    await api('/api/collections/users/records', { method: 'POST', body: JSON.stringify({ email, name, password: PASS, passwordConfirm: PASS }) }, su);
+    await api('/api/collections/users/records', { method: 'POST', body: JSON.stringify({ email, name, admin, password: PASS, passwordConfirm: PASS }) }, su);
 
   const A = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
   const B = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
@@ -91,6 +91,33 @@ try {
   await A.getByLabel('Map title').fill('Group map');
   await saved(A);
   const groupMapUrl = A.url();
+
+  log('Alice (admin) makes an invitation link into Lab for someone new');
+  await A.getByRole('button', { name: /all maps/ }).click();
+  await A.getByRole('button', { name: 'Invite people' }).click();
+  const inv = A.getByRole('dialog', { name: 'Invite people' });
+  await inv.getByLabel(/^For/).fill('Carol');
+  await inv.getByLabel('Also join group').selectOption({ label: 'Lab' });
+  await inv.getByRole('button', { name: 'Create invitation link' }).click();
+  const link = await inv.getByLabel('Invitation link').inputValue();
+  await inv.getByRole('button', { name: 'Close' }).click();
+
+  log('Carol signs up through the link with email and password and lands in Lab');
+  const Cpage = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
+  await sleep(3500);
+  await Cpage.goto(link);
+  await Cpage.getByRole('button', { name: 'Sign up with email' }).click();
+  await Cpage.getByLabel('Your name').fill('Carol');
+  await Cpage.getByLabel('Email').fill('carol@example.test');
+  await Cpage.getByLabel('Password').fill(PASS);
+  await Cpage.getByRole('button', { name: 'Create account' }).click();
+  await Cpage.locator('.account-name', { hasText: 'Carol' }).waitFor();
+  await Cpage.locator('.home-title', { hasText: 'Lab' }).waitFor();
+  await Cpage.locator('.card-title', { hasText: 'Group map' }).waitFor();
+  await sleep(1000);
+  await Cpage.goto(link);
+  await Cpage.getByText(/already been used/).waitFor();
+  await A.goto(groupMapUrl);
 
   log('Bob signs in, joins and sees the group map but not Alice\'s own maps');
   await B.goto(WEB);

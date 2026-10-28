@@ -29,9 +29,11 @@ import {
   signOut,
   updatedMs,
   useMember,
-  providerNames,
-  signInProviders,
-  type Provider,
+  createSignupLink,
+  deleteSignupLink,
+  joinUrl,
+  listSignupLinks,
+  type SignupLink,
   type CloudMap,
   type Group,
   type GroupMember,
@@ -446,6 +448,7 @@ function Workspace({
   const [newGroup, setNewGroup] = useState(false);
   const [managing, setManaging] = useState(false);
   const [copying, setCopying] = useState<CloudMap | null>(null);
+  const [links, setLinks] = useState<{ group: string | null } | null>(null);
 
   const groupId = section.startsWith('g:') ? section.slice(2) : null;
   const group = groups?.find((g) => g.id === groupId) ?? null;
@@ -561,6 +564,14 @@ function Workspace({
           <button className={`side-item muted${section === 'local' ? ' on' : ''}`} onClick={() => setSection('local')}>
             On this browser <span className="count">{local.length}</span>
           </button>
+        )}
+        {member.admin && (
+          <>
+            <span className="spacer" />
+            <button className="side-item side-invite" onClick={() => setLinks({ group: null })}>
+              <IPlus size={14} /> Invite people
+            </button>
+          </>
         )}
       </nav>
 
@@ -730,8 +741,13 @@ function Workspace({
             await loadSide();
             setSection('mine');
           }}
+          onNewLink={() => {
+            setManaging(false);
+            setLinks({ group: group.id });
+          }}
         />
       )}
+      {links && <InviteLinksDialog groups={groups ?? []} initialGroup={links.group} onClose={() => setLinks(null)} />}
       {copying && groups && (
         <CopyDialog
           map={copying}
@@ -862,12 +878,14 @@ function GroupDialog({
   onClose,
   onChanged,
   onGone,
+  onNewLink,
 }: {
   group: Group;
   member: Member;
   onClose: () => void;
   onChanged: () => Promise<void>;
   onGone: () => Promise<void>;
+  onNewLink?: () => void;
 }) {
   const owner = group.role === 'owner';
   const [members, setMembers] = useState<GroupMember[] | null>(null);
@@ -877,8 +895,6 @@ function GroupDialog({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [providers, setProviders] = useState<Provider[]>([]);
-  useEffect(() => void signInProviders().then(setProviders), []);
   const load = useCallback(async () => {
     try {
       const [m, p] = await Promise.all([listMembers(group.id), listGroupInvitations(group.id)]);
@@ -900,7 +916,6 @@ function GroupDialog({
       setError(explain(e));
     }
   };
-  const site = `${window.location.origin}${window.location.pathname}`;
 
   return (
     <Modal title={group.name} onClose={onClose} width={480}>
@@ -929,7 +944,7 @@ function GroupDialog({
           ))}
         </ul>
 
-        <h3>Invite someone</h3>
+        <h3>Invite someone with an account</h3>
         <form
           className="share-row"
           onSubmit={(e) => {
@@ -938,7 +953,7 @@ function GroupDialog({
             void run(async () => {
               await invite(group.id, to);
               setEmail('');
-              setNotice(`Invited ${to.toLowerCase()}. No email is sent: tell them to open ${site} and sign in with the ${providerNames(providers)} account that uses this address.`);
+              setNotice(`Invited ${to.toLowerCase()}. They'll find the invitation on their start page (no email is sent).`);
               await load();
             });
           }}
@@ -949,6 +964,19 @@ function GroupDialog({
           </button>
         </form>
         {notice && <p className="note ok">{notice}</p>}
+        <p className="note">
+          {member.admin ? (
+            <>
+              Someone new?{' '}
+              <button className="link inline" onClick={() => onNewLink?.()}>
+                Create an invitation link for this group
+              </button>
+              .
+            </>
+          ) : (
+            'Someone new needs an invitation link from the admin first.'
+          )}
+        </p>
         {pending.length > 0 && (
           <ul className="member-list">
             {pending.map((i) => (
@@ -1001,6 +1029,111 @@ function GroupDialog({
           </>
         )}
         {error && <p className="note warn">{error}</p>}
+      </div>
+    </Modal>
+  );
+}
+
+/** Admin only: invitation links for new people, optionally straight into one of your groups. */
+function InviteLinksDialog({ groups, initialGroup, onClose }: { groups: Group[]; initialGroup: string | null; onClose: () => void }) {
+  const [note, setNote] = useState('');
+  const [group, setGroup] = useState(initialGroup ?? '');
+  const [links, setLinks] = useState<SignupLink[] | null>(null);
+  const [fresh, setFresh] = useState<SignupLink | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => listSignupLinks().then(setLinks, (e) => setError(explain(e))), []);
+  useEffect(() => void load(), [load]);
+  const copy = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(joinUrl(code));
+      setCopied(code);
+      window.setTimeout(() => setCopied(null), 1800);
+    } catch {
+      /* clipboard blocked: the field stays selectable */
+    }
+  };
+  const status = (l: SignupLink) =>
+    l.usedByName ? `used by ${l.usedByName}` : updatedMs(l.expires) < Date.now() ? 'expired' : `works until ${new Date(updatedMs(l.expires)).toLocaleDateString()}`;
+  return (
+    <Modal title="Invite people" onClose={onClose} width={520}>
+      <div className="stack">
+        <p className="note">Each link creates one account, with GitHub or with email and password, and works for 14 days. Send it however you like; no email is sent.</p>
+        <form
+          className="stack tight"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setBusy(true);
+            setError(null);
+            try {
+              const l = await createSignupLink(note, group || null);
+              setFresh(l);
+              setNote('');
+              await load();
+              void copy(l.code);
+            } catch (err) {
+              setError(explain(err));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <div className="share-row">
+            <label className="field">
+              <span>For (optional, only you see this)</span>
+              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Ville" maxLength={120} />
+            </label>
+            <label className="field">
+              <span>Also join group</span>
+              <select value={group} onChange={(e) => setGroup(e.target.value)}>
+                <option value="">No group</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <button type="submit" className="primary align-start" disabled={busy}>
+            {busy ? 'Creating…' : 'Create invitation link'}
+          </button>
+        </form>
+        {fresh && (
+          <div className="share-row">
+            <input readOnly value={joinUrl(fresh.code)} onFocus={(e) => e.target.select()} aria-label="Invitation link" />
+            <button className="primary" onClick={() => void copy(fresh.code)}>
+              {copied === fresh.code ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        )}
+        {error && <p className="note warn">{error}</p>}
+        {links && links.length > 0 && (
+          <>
+            <h3>Your links</h3>
+            <ul className="member-list">
+              {links.map((l) => (
+                <li key={l.id}>
+                  <span>{l.note || 'Invitation'}</span>
+                  <span className="home-hint">
+                    {l.groupName ? `${l.groupName} · ` : ''}
+                    {status(l)}
+                  </span>
+                  <span className="spacer" />
+                  {!l.usedByName && updatedMs(l.expires) > Date.now() && (
+                    <button className="small" onClick={() => void copy(l.code)}>
+                      {copied === l.code ? 'Copied' : 'Copy link'}
+                    </button>
+                  )}
+                  <button className="small" onClick={async () => (await deleteSignupLink(l.id).catch((e) => setError(explain(e))), await load())}>
+                    {l.usedByName ? 'Remove' : 'Withdraw'}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
     </Modal>
   );

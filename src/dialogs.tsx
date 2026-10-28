@@ -3,7 +3,7 @@ import { reducedMotion } from './motion';
 import { IClose } from './icons';
 import type { Doc } from './model';
 import { shareUrl } from './share';
-import { cloudEnabled, createCloudMap, explain, listMyGroups, providerNames, PROVIDER_LABEL, signIn, signInProviders, signInWith, useMember, type Group, type Provider } from './cloud';
+import { cloudEnabled, createCloudMap, explain, listMyGroups, PROVIDER_LABEL, signIn, signInProviders, signInWith, useMember, type Group, type Provider } from './cloud';
 import type { Place } from './Editor';
 
 export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -135,19 +135,15 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
 const BRAND = import.meta.glob<string>('./brand/*.svg', { eager: true, query: '?url', import: 'default' });
 const markFor = (p: Provider) => BRAND[`./brand/${p}-mark-white.svg`];
 
-/** Sign-in options: GitHub first; the email/password accounts made by the admin behind a link. */
-export function SignInCard({ onDone, autoFocus }: { onDone?: () => void; autoFocus?: boolean }) {
+/** Sign-in options side by side in weight: GitHub, or the email and password of your account. */
+export function SignInCard({ onDone, autoFocus, title = 'Sign in', sub = 'Your maps in the cloud, and the groups you work in.', foot = true }: { onDone?: () => void; autoFocus?: boolean; title?: string; sub?: string; foot?: boolean }) {
   const [providers, setProviders] = useState<Provider[] | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
   useEffect(() => {
-    void signInProviders().then((p) => {
-      setProviders(p);
-      if (!p.length) setShowPassword(true);
-    });
+    void signInProviders().then(setProviders);
   }, []);
   const run = async (what: string, fn: () => Promise<void>) => {
     setBusy(what);
@@ -160,63 +156,55 @@ export function SignInCard({ onDone, autoFocus }: { onDone?: () => void; autoFoc
       setBusy(null);
     }
   };
-  const hasOAuth = !!providers && providers.length > 0;
   return (
     <div className="signin-card">
-      <h2>Sign in</h2>
-      <p className="signin-sub">Your maps in the cloud, and the groups you work in.</p>
+      <h2>{title}</h2>
+      {sub && <p className="signin-sub">{sub}</p>}
       {providers === null && <div className="signin-skeleton" aria-hidden="true" />}
-      {hasOAuth &&
-        providers!.map((p) => {
-          const mark = markFor(p);
-          return (
-            <button key={p} className={`btn-oauth btn-${p}`} disabled={!!busy} autoFocus={autoFocus} onClick={() => void run(p, () => signInWith(p))}>
-              {mark && <img src={mark} alt="" width={20} height={20} />}
-              {busy === p ? 'Waiting for ' + PROVIDER_LABEL[p] + '…' : `Continue with ${PROVIDER_LABEL[p]}`}
-            </button>
-          );
-        })}
-      {hasOAuth && !showPassword && (
-        <button className="link signin-alt" onClick={() => setShowPassword(true)}>
-          Use email and password instead
+      {providers?.map((p) => (
+        <OAuthButton key={p} provider={p} busy={busy === p} disabled={!!busy} onClick={() => void run(p, () => signInWith(p))} />
+      ))}
+      {!!providers?.length && (
+        <div className="signin-or" role="separator">
+          <span>or</span>
+        </div>
+      )}
+      <form
+        className="stack tight"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run('password', () => signIn(email, password));
+        }}
+      >
+        <label className="field">
+          <span>Email</span>
+          <input type="email" autoComplete="username" autoFocus={autoFocus && providers !== null && !providers.length} value={email} onChange={(e) => setEmail(e.target.value)} />
+        </label>
+        <label className="field">
+          <span>Password</span>
+          <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </label>
+        <button type="submit" className="primary signin-submit" disabled={!!busy || !email || !password}>
+          {busy === 'password' ? 'Signing in…' : 'Sign in with email'}
         </button>
-      )}
-      {showPassword && (
-        <>
-          {hasOAuth && (
-            <div className="signin-or" role="separator">
-              <span>or with an account from your admin</span>
-            </div>
-          )}
-          <form
-            className="stack tight"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void run('password', () => signIn(email, password));
-            }}
-          >
-            <label className="field">
-              <span>Email</span>
-              <input type="email" autoComplete="username" autoFocus={hasOAuth || autoFocus} value={email} onChange={(e) => setEmail(e.target.value)} />
-            </label>
-            <label className="field">
-              <span>Password</span>
-              <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-            </label>
-            <button type="submit" className="primary signin-submit" disabled={!!busy || !email || !password}>
-              {busy === 'password' ? 'Signing in…' : 'Sign in'}
-            </button>
-          </form>
-        </>
-      )}
+      </form>
       {error && <p className="note warn">{error}</p>}
-      <p className="signin-foot">
-        <strong>Invite only.</strong>{' '}
-        {hasOAuth
-          ? `To join, ask someone in a group to invite the email of your ${providerNames(providers!)} account, then sign in here.`
-          : 'Ask your admin or someone in a group for access.'}
-      </p>
+      {foot && (
+        <p className="signin-foot">
+          <strong>Invite only.</strong> New here? Ask the admin for an invitation link.
+        </p>
+      )}
     </div>
+  );
+}
+
+export function OAuthButton({ provider, busy, disabled, onClick, label }: { provider: Provider; busy?: boolean; disabled?: boolean; onClick: () => void; label?: string }) {
+  const mark = markFor(provider);
+  return (
+    <button className={`btn-oauth btn-${provider}`} disabled={disabled} onClick={onClick}>
+      {mark && <img src={mark} alt="" width={20} height={20} />}
+      {busy ? `Waiting for ${PROVIDER_LABEL[provider]}…` : (label ?? `Continue with ${PROVIDER_LABEL[provider]}`)}
+    </button>
   );
 }
 

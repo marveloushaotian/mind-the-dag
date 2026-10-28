@@ -115,7 +115,7 @@ try {
 
   console.log('e2e passed');
 } catch (e) {
-  console.log(`::error title=e2e failed at: ${step}::${String(e.message || e).split('\n')[0].slice(0, 400)}`);
+  console.log(`::error title=e2e failed at: ${step}::${String(e.message || e).split('\n').filter(Boolean).slice(0, 4).join(' | ').slice(0, 600)}`);
   process.exitCode = 1;
 } finally {
   await browser.close();

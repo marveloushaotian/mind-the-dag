@@ -403,6 +403,7 @@ function Workspace({
       deleteMap(id);
       setLocal(listMaps());
       setNotice(`Moved “${d.title || 'Untitled'}” to My maps.`);
+      if (section === 'mine') await loadMaps();
     } catch (e) {
       setError(explain(e));
     }
@@ -423,7 +424,8 @@ function Workspace({
     }
     setLocal(listMaps());
     setNotice(`Moved ${n} map${n === 1 ? '' : 's'} to My maps.`);
-    setSection('mine');
+    if (section === 'mine') await loadMaps();
+    else setSection('mine');
   };
 
   const title = section === 'mine' ? 'My maps' : section === 'local' ? 'On this browser' : section === 'invites' ? 'Invitations' : (group?.name ?? '');

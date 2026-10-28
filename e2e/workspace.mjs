@@ -22,12 +22,14 @@ async function api(path, init = {}, token) {
 
 async function signIn(page, email) {
   await sleep(3500); // stay under the auth rate limit (2 per 3 s)
-  await page.getByRole('button', { name: 'Sign in', exact: true }).first().click();
-  const dlg = page.getByRole('dialog', { name: 'Sign in' });
-  await dlg.getByLabel('Email').fill(email);
-  await dlg.getByLabel('Password').fill(PASS);
-  await dlg.getByRole('button', { name: 'Sign in' }).click();
-  await dlg.waitFor({ state: 'detached' });
+  const card = page.locator('.signin-card').first();
+  if (!(await card.isVisible())) await page.getByRole('button', { name: 'Sign in', exact: true }).first().click();
+  const alt = card.getByRole('button', { name: /email and password/ });
+  if (await alt.count()) await alt.click();
+  await card.getByLabel('Email').fill(email);
+  await card.getByLabel('Password').fill(PASS);
+  await card.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.locator('.account-name').waitFor();
 }
 const saved = async (page) => {
   await sleep(800); // the first save starts a moment after the last keystroke
@@ -50,6 +52,7 @@ try {
 
   log('signed out: a draft in this browser');
   await A.goto(WEB);
+  await A.getByRole('button', { name: /Try it without an account/ }).click();
   await A.getByRole('button', { name: 'New map' }).click();
   await A.waitForURL(/#\/map\//);
   await A.getByLabel('Map title').fill('Local one');

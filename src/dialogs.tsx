@@ -8,7 +8,7 @@ import type { Place } from './Editor';
 export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = isMac ? '⌘' : 'Ctrl';
 
-export function Modal({ title, onClose, children, width = 380 }: { title: string; onClose: () => void; children: ReactNode; width?: number }) {
+export function Modal({ title, onClose, children, width = 380, bare }: { title: string; onClose: () => void; children: ReactNode; width?: number; bare?: boolean }) {
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', k);
@@ -16,13 +16,19 @@ export function Modal({ title, onClose, children, width = 380 }: { title: string
   }, [onClose]);
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title} style={{ width }}>
-        <div className="modal-head">
-          <h2>{title}</h2>
-          <button className="icon" onClick={onClose} aria-label="Close">
+      <div className={`modal${bare ? ' bare' : ''}`} role="dialog" aria-modal="true" aria-label={title} style={{ width }}>
+        {bare ? (
+          <button className="icon modal-x" onClick={onClose} aria-label="Close">
             <IClose size={16} />
           </button>
-        </div>
+        ) : (
+          <div className="modal-head">
+            <h2>{title}</h2>
+            <button className="icon" onClick={onClose} aria-label="Close">
+              <IClose size={16} />
+            </button>
+          </div>
+        )}
         {children}
       </div>
     </div>
@@ -117,11 +123,16 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function SignInDialog({ onClose }: { onClose: () => void }) {
+// Official marks dropped into src/brand/ (see README there) are used on the sign-in buttons.
+const BRAND = import.meta.glob<string>('./brand/*.svg', { eager: true, query: '?url', import: 'default' });
+const markFor = (p: Provider) => BRAND[`./brand/${p}-mark-white.svg`];
+
+/** Sign-in options: GitHub first; the email/password accounts made by the admin behind a link. */
+export function SignInCard({ onDone, autoFocus }: { onDone?: () => void; autoFocus?: boolean }) {
   const [providers, setProviders] = useState<Provider[] | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   useEffect(() => {
@@ -130,61 +141,81 @@ export function SignInDialog({ onClose }: { onClose: () => void }) {
       if (!p.length) setShowPassword(true);
     });
   }, []);
-  const run = async (fn: () => Promise<void>) => {
-    setBusy(true);
+  const run = async (what: string, fn: () => Promise<void>) => {
+    setBusy(what);
     setError(null);
     try {
       await fn();
-      onClose();
+      onDone?.();
     } catch (e) {
       setError((e as Error).message);
-      setBusy(false);
+      setBusy(null);
     }
   };
+  const hasOAuth = !!providers && providers.length > 0;
   return (
-    <Modal title="Sign in" onClose={onClose} width={380}>
-      {providers && providers.length > 0 && (
-        <div className="stack tight">
-          {providers.map((p) => (
-            <button key={p} className="big oauth" disabled={busy} onClick={() => void run(() => signInWith(p))}>
-              Continue with {PROVIDER_LABEL[p]}
+    <div className="signin-card">
+      <h2>Sign in</h2>
+      <p className="signin-sub">Your maps in the cloud, and the groups you work in.</p>
+      {providers === null && <div className="signin-skeleton" aria-hidden="true" />}
+      {hasOAuth &&
+        providers!.map((p) => {
+          const mark = markFor(p);
+          return (
+            <button key={p} className={`btn-oauth btn-${p}`} disabled={!!busy} autoFocus={autoFocus} onClick={() => void run(p, () => signInWith(p))}>
+              {mark && <img src={mark} alt="" width={20} height={20} />}
+              {busy === p ? 'Waiting for ' + PROVIDER_LABEL[p] + '…' : `Continue with ${PROVIDER_LABEL[p]}`}
             </button>
-          ))}
-        </div>
+          );
+        })}
+      {hasOAuth && !showPassword && (
+        <button className="link signin-alt" onClick={() => setShowPassword(true)}>
+          Use email and password instead
+        </button>
       )}
-      {showPassword ? (
-        <form
-          className="stack"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(() => signIn(email, password));
-          }}
-        >
-          <label className="field">
-            <span>Email</span>
-            <input type="email" autoComplete="username" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>Password</span>
-            <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </label>
-          <div className="actions">
-            <button type="submit" className="primary" disabled={busy || !email || !password}>
-              {busy ? 'Signing in…' : 'Sign in'}
+      {showPassword && (
+        <>
+          {hasOAuth && (
+            <div className="signin-or" role="separator">
+              <span>or with an account from your admin</span>
+            </div>
+          )}
+          <form
+            className="stack tight"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run('password', () => signIn(email, password));
+            }}
+          >
+            <label className="field">
+              <span>Email</span>
+              <input type="email" autoComplete="username" autoFocus={hasOAuth || autoFocus} value={email} onChange={(e) => setEmail(e.target.value)} />
+            </label>
+            <label className="field">
+              <span>Password</span>
+              <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </label>
+            <button type="submit" className="primary signin-submit" disabled={!!busy || !email || !password}>
+              {busy === 'password' ? 'Signing in…' : 'Sign in'}
             </button>
-          </div>
-        </form>
-      ) : (
-        providers && (
-          <button className="link" onClick={() => setShowPassword(true)}>
-            Sign in with email and password
-          </button>
-        )
+          </form>
+        </>
       )}
       {error && <p className="note warn">{error}</p>}
-      {providers && providers.length > 0 && (
-        <p className="note">New here? Someone in your group invites your email address; then sign in with the {providerNames(providers)} account that uses it.</p>
-      )}
+      <p className="signin-foot">
+        <strong>Invite only.</strong>{' '}
+        {hasOAuth
+          ? `To join, ask someone in a group to invite the email of your ${providerNames(providers!)} account, then sign in here.`
+          : 'Ask your admin or someone in a group for access.'}
+      </p>
+    </div>
+  );
+}
+
+export function SignInDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <Modal title="Sign in" onClose={onClose} width={400} bare>
+      <SignInCard onDone={onClose} autoFocus />
     </Modal>
   );
 }

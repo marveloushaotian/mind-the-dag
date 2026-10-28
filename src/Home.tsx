@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { metagenomeExample } from './examples';
 import { IFile, IPlus } from './icons';
 import { Wordmark } from './ui';
@@ -7,7 +7,7 @@ import { backupAll, deleteMap, duplicateMap, isBackup, listMaps, loadMap, reques
 import { download } from './exporters';
 import { emptyDoc, type Doc } from './model';
 import { docBounds, MetroMap } from './render';
-import { Modal, SignInDialog } from './dialogs';
+import { Modal, SignInCard, SignInDialog } from './dialogs';
 import {
   acceptInvitation,
   cloudEnabled,
@@ -201,31 +201,94 @@ export default function Home({
 }) {
   const member = useMember();
   useEffect(() => requestPersistence(), []);
+  // Signed out: the start page is the sign-in page, with a way to try the editor without an account.
+  const [tryLocal, setTryLocalState] = useState(() => {
+    try {
+      return sessionStorage.getItem(LOCAL_MODE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const setTryLocal = (v: boolean) => {
+    setTryLocalState(v);
+    try {
+      if (v) sessionStorage.setItem(LOCAL_MODE_KEY, '1');
+      else sessionStorage.removeItem(LOCAL_MODE_KEY);
+    } catch {
+      /* ignore */
+    }
+  };
+  const landing = cloudEnabled && !member && !tryLocal;
   return (
-    <div className="home">
+    <div className={`home${landing ? ' landing-page' : ''}`}>
       <header className="topbar">
         <Wordmark size={17} />
         <span className="spacer" />
-        <Account member={member} />
+        {member && <Account member={member} />}
       </header>
       {member ? (
         <Workspace key={member.id} member={member} onOpenLocal={onOpenLocal} onOpenCloud={onOpenCloud} onCreate={onCreate} createError={createError} />
+      ) : landing ? (
+        <Landing onTry={() => setTryLocal(true)} />
       ) : (
-        <LocalHome onOpen={onOpenLocal} onCreate={(d) => onCreate(d)} />
+        <LocalHome onOpen={onOpenLocal} onCreate={(d) => onCreate(d)} onBack={cloudEnabled ? () => setTryLocal(false) : undefined} />
       )}
     </div>
   );
 }
 
+const LOCAL_MODE_KEY = 'mind-the-dag:try-local';
+
+// ------------------------------------------------------------------ signed out: sign-in first
+function Landing({ onTry }: { onTry: () => void }) {
+  const example = useMemo(() => metagenomeExample(), []);
+  const b = docBounds(example);
+  const drafts = listMaps().length;
+  return (
+    <main className="landing">
+      <section className="landing-intro">
+        <h1>Metro maps for your pipelines</h1>
+        <p>
+          Draw workflow diagrams in the nf-core metro-map style, export them for papers, and keep them in the cloud to work on with your group.
+        </p>
+        {b && (
+          <div className="landing-preview" aria-hidden="true">
+            <svg viewBox={`${b.x0 - 24} ${b.y0 - 24} ${b.x1 - b.x0 + 48} ${b.y1 - b.y0 + 48}`} preserveAspectRatio="xMidYMid meet">
+              <MetroMap doc={example} exporting />
+            </svg>
+          </div>
+        )}
+      </section>
+      <section className="landing-side">
+        <SignInCard />
+        <button className="landing-try" onClick={onTry}>
+          <span>Try it without an account</span>
+          <span className="home-hint">{drafts ? `${drafts} map${drafts === 1 ? '' : 's'} saved in this browser` : 'Maps stay in this browser only'}</span>
+        </button>
+      </section>
+    </main>
+  );
+}
+
 // ------------------------------------------------------------------ signed out: this browser only
-function LocalHome({ onOpen, onCreate }: { onOpen: (id: string) => void; onCreate: (d: Doc) => void }) {
+function LocalHome({ onOpen, onCreate, onBack }: { onOpen: (id: string) => void; onCreate: (d: Doc) => void; onBack?: () => void }) {
   const [maps, setMaps] = useState(listMaps);
   // Re-read after mount: an editor that just closed saves its last changes during unmount.
   useEffect(() => setMaps(listMaps()), []);
   const [notice, setNotice] = useState<string | null>(null);
-  const [signingIn, setSigningIn] = useState(false);
   return (
     <main className="home-main">
+      {onBack && (
+        <div className="callout local-banner">
+          <span>
+            <strong>Not signed in.</strong> Maps you make now are kept in this browser only.
+          </span>
+          <span className="spacer" />
+          <button className="small primary" onClick={onBack}>
+            Sign in
+          </button>
+        </div>
+      )}
       <div className="home-actions">
         <button className="primary big" onClick={() => onCreate(emptyDoc())}>
           <IPlus /> New map
@@ -242,15 +305,6 @@ function LocalHome({ onOpen, onCreate }: { onOpen: (id: string) => void; onCreat
         </button>
       </div>
       {notice && <p className="home-notice">{notice}</p>}
-      {cloudEnabled && (
-        <p className="home-hint signin-hint">
-          <button className="link inline" onClick={() => setSigningIn(true)}>
-            Sign in
-          </button>{' '}
-          to keep your maps in the cloud and share them with a group.
-          {signingIn && <SignInDialog onClose={() => setSigningIn(false)} />}
-        </p>
-      )}
       {maps.length > 0 && <LocalDrafts maps={maps} onOpen={onOpen} onChange={() => setMaps(listMaps())} />}
     </main>
   );

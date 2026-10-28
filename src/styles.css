@@ -41,7 +41,7 @@ button.danger { color: var(--danger); border-color: transparent; background: tra
 button.danger:hover:not(:disabled) { background: #b44a3a12; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid color-mix(in srgb, var(--focus) 45%, transparent); outline-offset: 1px; }
 kbd { font: inherit; font-size: 11px; color: var(--faint); }
-input:not([type]), input[type='text'], select, textarea {
+input:not([type]), input[type='text'], input[type='email'], input[type='password'], select, textarea {
   font: inherit; width: 100%; height: 32px; padding: 0 10px; color: var(--ink);
   background: #fff; border: 1px solid var(--line); border-radius: 8px;
 }

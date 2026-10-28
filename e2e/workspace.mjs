@@ -113,7 +113,7 @@ try {
   await A.getByRole('button', { name: 'Preview what they see' }).click();
   await A.getByRole('button', { name: 'Sign up with email' }).waitFor();
   await A.getByRole('button', { name: 'Close preview' }).click();
-  await A.getByRole('button', { name: 'Back to your maps' }).click();
+  await A.getByRole('button', { name: 'Your maps' }).click();
   await A.goto(home);
 
   log('Carol signs up through the link with email and password and lands in Lab');

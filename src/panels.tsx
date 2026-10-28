@@ -1,5 +1,5 @@
-import { IConnect, IDown, IPlus, ISection, ISelect, ITrash, IUp } from './icons';
-import { uid, type Doc, type LabelSide, type StationKind } from './model';
+import { IClose, IConnect, IDown, IPlus, ISection, ISelect, ITrash, IUp } from './icons';
+import { pruneLines, uid, usedLines, type Doc, type LabelSide, type StationKind } from './model';
 import { lineStyle, paletteLines, PALETTE_IDS, tints, type ThemeId } from './tokens';
 import { Field, Popover, Seg, Toggle } from './ui';
 
@@ -65,6 +65,14 @@ export function LeftRail({
     setActive(id);
   };
 
+  const removeLine = (id: string) =>
+    update((d) => {
+      d.lines = d.lines.filter((x) => x.id !== id);
+      for (const e of d.edges) e.lines = e.lines.filter((x) => x !== id);
+      d.edges = d.edges.filter((e) => e.lines.length);
+    });
+  const used = usedLines(doc);
+
   return (
     <>
       <nav className="tools" aria-label="Tools">
@@ -85,7 +93,7 @@ export function LeftRail({
       </div>
       <ul className="lines">
         {doc.lines.map((l, i) => (
-          <li key={l.id} className={active === l.id ? 'active' : ''} onPointerDown={() => setActive(l.id)}>
+          <li key={l.id} className={`${active === l.id ? 'active' : ''}${used.has(l.id) ? '' : ' unused'}`} onPointerDown={() => setActive(l.id)} title={used.has(l.id) ? undefined : 'Not drawn yet: pick it and click stations to draw it'}>
             <Popover label="Line style" trigger={<Swatch doc={doc} slot={l.slot} theme={theme} pattern={l.pattern} planned={l.planned} />}>
               <div className="slots">
                 {slots.map((s, k) => (
@@ -105,22 +113,17 @@ export function LeftRail({
                 ]}
               />
               <Toggle label="Planned" checked={!!l.planned} onChange={(v) => update((d) => void (d.lines[i].planned = v))} />
-              <button
-                className="danger"
-                disabled={doc.lines.length === 1}
-                onClick={() =>
-                  update((d) => {
-                    d.lines.splice(i, 1);
-                    for (const e of d.edges) e.lines = e.lines.filter((x) => x !== l.id);
-                    d.edges = d.edges.filter((e) => e.lines.length);
-                  })
-                }
-              >
+              <button className="danger" disabled={doc.lines.length === 1} onClick={() => removeLine(l.id)}>
                 <ITrash size={16} /> Delete line
               </button>
             </Popover>
             <input className="bare-input" value={l.name} onChange={(e) => update((d) => void (d.lines[i].name = e.target.value), `line-name-${l.id}`)} aria-label="Line name" />
             <span className="reorder">
+              {doc.lines.length > 1 && (
+                <button className="icon line-remove" onClick={() => removeLine(l.id)} aria-label={`Delete ${l.name || 'line'}`} title="Delete line">
+                  <IClose size={14} />
+                </button>
+              )}
               <button className="icon" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up" title="Move up">
                 <IUp size={14} />
               </button>
@@ -348,9 +351,11 @@ export function Inspector({
                   checked={e.lines.includes(l.id)}
                   onChange={(ev) =>
                     update((d) => {
+                      const before = usedLines(d);
                       const ed = d.edges[i];
                       if (ev.target.checked) ed.lines.push(l.id);
                       else if (ed.lines.length > 1) ed.lines = ed.lines.filter((x) => x !== l.id);
+                      pruneLines(d, before);
                     })
                   }
                 />

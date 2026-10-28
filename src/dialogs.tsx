@@ -9,7 +9,7 @@ import type { Place } from './Editor';
 export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = isMac ? '⌘' : 'Ctrl';
 
-export function Modal({ title, onClose, children, width = 380, bare }: { title: string; onClose: () => void; children: ReactNode; width?: number; bare?: boolean }) {
+export function Modal({ title, onClose, children, width = 420, bare }: { title: string; onClose: () => void; children: ReactNode; width?: number; bare?: boolean }) {
   // Closing plays a short fade-out first (skipped with "reduce motion").
   const [closing, setClosing] = useState(false);
   const close = useCallback(() => {
@@ -293,7 +293,7 @@ export function ShareDialog({ doc, place, onClose, onMoveToCloud }: { doc: Doc; 
     }
   };
   return (
-    <Modal title="Share" onClose={onClose} width={460}>
+    <Modal title="Share" onClose={onClose} width={500}>
       {cloudEnabled && (
         <div className="group-share">
           <h3>With a group</h3>

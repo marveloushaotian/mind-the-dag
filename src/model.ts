@@ -187,3 +187,75 @@ export function snapStation(p: Pt, axis: Axis): Pt {
 export function snap(v: number, step = GRID): number {
   return Math.round(v / step) * step;
 }
+
+// ---------------------------------------------------------------------------
+// Edits that keep the document tidy
+
+/** Lines drawn on at least one connection. */
+export function usedLines(d: Doc): Set<string> {
+  return new Set(d.edges.flatMap((e) => e.lines));
+}
+
+/**
+ * Drop lines that were on the map before an edit and are not any more, so the Lines list
+ * follows what is drawn. Lines never drawn (just added) stay; one line always remains.
+ */
+export function pruneLines(d: Doc, before: Set<string>): string[] {
+  const now = usedLines(d);
+  const gone = d.lines.filter((l) => before.has(l.id) && !now.has(l.id)).map((l) => l.id);
+  if (!gone.length) return [];
+  const keep = d.lines.filter((l) => !gone.includes(l.id));
+  if (!keep.length) {
+    // Keep the first of the removed lines so there is always something to draw with.
+    keep.push(d.lines.find((l) => l.id === gone[0])!);
+    gone.shift();
+  }
+  d.lines = keep;
+  return gone;
+}
+
+/** The station another one would land on at `p` (within `r`), ignoring `except`. */
+export function stationAt(d: Doc, p: Pt, except: Set<string>, r = 10): Station | undefined {
+  let best: Station | undefined;
+  let bestD = r;
+  for (const s of d.stations) {
+    if (except.has(s.id)) continue;
+    const dist = Math.hypot(s.x - p.x, s.y - p.y);
+    if (dist <= bestD) {
+      best = s;
+      bestD = dist;
+    }
+  }
+  return best;
+}
+
+/**
+ * Merge station `fromId` into `intoId`: its connections move over, connections that now
+ * join the same two stations become one (their lines combined), and loops are dropped.
+ * The kept station takes the other's label or file badge only where it has none.
+ */
+export function mergeStations(d: Doc, fromId: string, intoId: string): void {
+  const from = d.stations.find((s) => s.id === fromId);
+  const into = d.stations.find((s) => s.id === intoId);
+  if (!from || !into || from === into) return;
+  if (!into.label && from.label) into.label = from.label;
+  if (!into.file && from.file) into.file = from.file;
+  const edges: Edge[] = [];
+  const byPair = new Map<string, Edge>();
+  for (const e of d.edges) {
+    const a = e.from === fromId ? intoId : e.from;
+    const b = e.to === fromId ? intoId : e.to;
+    if (a === b) continue;
+    const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+    const same = byPair.get(key);
+    if (same) {
+      for (const l of e.lines) if (!same.lines.includes(l)) same.lines.push(l);
+      continue;
+    }
+    const next = { ...e, from: a, to: b, lines: [...e.lines] };
+    byPair.set(key, next);
+    edges.push(next);
+  }
+  d.edges = edges;
+  d.stations = d.stations.filter((s) => s.id !== fromId);
+}

@@ -42,4 +42,9 @@ export const ITrash = make(<path {...P} d="M3.5 5 H14.5 M7 5 V3.5 H11 V5 M5 5 L5
 export const IUp = make(<path {...P} d="M5 11 L9 7 L13 11" />);
 export const IDown = make(<path {...P} d="M5 7 L9 11 L13 7" />);
 export const IFile = make(<path {...P} d="M4.5 2.5 H10.5 L13.5 5.5 V15.5 H4.5 Z M10.5 2.5 V5.5 H13.5" />);
+export const IDuplicate = make(<path {...P} d="M6.5 6.5 H14.5 V14.5 H6.5 Z M11.5 6.5 V3.5 H3.5 V11.5 H6.5" />);
+/** Two people: a group. */
+export const IGroup = make(<path {...P} d="M7 8.5 A2.5 2.5 0 1 0 7 3.5 A2.5 2.5 0 1 0 7 8.5 M2.5 15 C2.5 12 4.5 10.5 7 10.5 C9.5 10.5 11.5 12 11.5 15 M12 8.3 A2.2 2.2 0 1 0 12 3.9 M13.2 10.7 C14.8 11.2 15.8 12.6 15.8 15" />);
+/** Cloud with an arrow up: move into the account. */
+export const IUpload = make(<path {...P} d="M5.5 13.5 H4.8 A3.3 3.3 0 0 1 4.6 6.9 A4.6 4.6 0 0 1 13.4 6.6 A3.4 3.4 0 0 1 13.2 13.5 H12.5 M9 15.5 V9 M6.6 11.2 L9 8.8 L11.4 11.2" />);
 export const IClose = make(<path {...P} d="M4.5 4.5 L13.5 13.5 M13.5 4.5 L4.5 13.5" />);

@@ -5,7 +5,7 @@ import { IFit, IHelp, IMinus, IPlus, IRedo, IUndo } from './icons';
 import { isBackup, restoreBackup } from './library';
 import { importFile } from './importers';
 import { roundedPath, routeCentre } from './geometry';
-import { derive, emptyDoc, snap, snapStation, uid, type Doc, type Station } from './model';
+import { derive, emptyDoc, mergeStations, pruneLines, snap, snapStation, stationAt, uid, usedLines, type Doc, type Station } from './model';
 import { Inspector, LeftRail, TOOLS, type Tool } from './panels';
 import { edgeGeometry, MetroMap } from './render';
 import { useDocument } from './store';
@@ -161,12 +161,14 @@ export default function Editor({
   const deleteSelection = useCallback(() => {
     if (!selected.size) return;
     update((d) => {
+      const before = usedLines(d);
       const st = new Set([...selected].filter((s) => s.startsWith('station:')).map((s) => s.slice(8)));
       const ed = new Set([...selected].filter((s) => s.startsWith('edge:')).map((s) => s.slice(5)));
       const se = new Set([...selected].filter((s) => s.startsWith('section:')).map((s) => s.slice(8)));
       d.stations = d.stations.filter((s) => !st.has(s.id));
       d.edges = d.edges.filter((e) => !ed.has(e.id) && !st.has(e.from) && !st.has(e.to));
       d.sections = d.sections.filter((s) => !se.has(s.id));
+      pruneLines(d, before);
     });
     setSelected(new Set());
   }, [selected, update]);
@@ -257,12 +259,14 @@ export default function Editor({
   const connect = (from: string, to: string) => {
     if (from === to || !active) return;
     update((d) => {
+      const before = usedLines(d);
       const e = d.edges.find((x) => (x.from === from && x.to === to) || (x.from === to && x.to === from));
       if (e) {
         if (e.lines.includes(active)) {
           if (e.lines.length > 1) e.lines = e.lines.filter((l) => l !== active);
         } else e.lines.push(active);
       } else d.edges.push({ id: uid('e'), from, to, lines: [active], bend: 0.5 });
+      pruneLines(d, before);
     });
   };
 
@@ -593,7 +597,21 @@ export default function Editor({
     }
   };
 
+  // A single station dropped onto another one merges into it (the drag's checkpoint makes it one undo step).
+  const mergeTarget = useMemo(() => {
+    if (drag?.kind !== 'stations' || !drag.moved || drag.ids.length !== 1) return null;
+    const lead = doc.stations.find((s) => s.id === drag.ids[0]);
+    return lead ? (stationAt(doc, lead, new Set(drag.ids)) ?? null) : null;
+  }, [drag, doc]);
+
   const onPointerUp = () => {
+    if (drag?.kind === 'stations' && mergeTarget) {
+      const from = drag.ids[0];
+      const into = mergeTarget;
+      preview((d) => mergeStations(d, from, into.id));
+      setSelected(new Set([`station:${into.id}`]));
+      flash(`Merged into ${into.label || 'the station there'}. Undo to separate them again.`);
+    }
     if (drag?.kind === 'newSection') {
       const x = Math.min(drag.start.x, drag.cur.x);
       const y = Math.min(drag.start.y, drag.cur.y);
@@ -751,6 +769,7 @@ export default function Editor({
               {selectedSections.map((s) => (
                 <rect key={`h-${s.id}`} data-handle={s.id} className="handle" x={s.x + s.w - 6} y={s.y + s.h - 6} width={12} height={12} rx={3} />
               ))}
+              {mergeTarget && <circle className="merge-target" cx={mergeTarget.x} cy={mergeTarget.y} r={18} />}
               {bendInfo && (
                 <circle className="bend-handle" data-bend={bendInfo.id} cx={bendInfo.at.x} cy={bendInfo.at.y} r={7 / Math.max(view.k, 0.5)} />
               )}

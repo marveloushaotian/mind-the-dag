@@ -65,13 +65,12 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
           <div className="signin-card join-card">
             <h2>This is your invitation link</h2>
             <p className="signin-sub">
-              You made it, so you see it as its owner. Anyone else who opens it, without being signed in, gets the sign-up page
-              {info.group ? (
+              Others who open it get the sign-up page{info.group ? (
                 <>
-                  {' '}and joins <strong>{info.group}</strong>
+                  {' '}and join <strong>{info.group}</strong>
                 </>
               ) : null}
-              . Opening it yourself doesn't use a place.
+              . Opening it yourself uses no place.
             </p>
             <p className="join-usage">
               {info.valid
@@ -94,7 +93,7 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
               </button>
               {info.valid && <button onClick={() => setPreview(true)}>Preview what they see</button>}
               <button className="link" onClick={() => onDone(null)}>
-                Back to your maps
+                Your maps
               </button>
             </div>
           </div>

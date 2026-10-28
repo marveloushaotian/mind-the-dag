@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { metagenomeExample } from './examples';
-import { IFile, IPlus } from './icons';
+import { IDuplicate, IFile, IGroup, IPlus, ITrash, IUpload } from './icons';
 import { Wordmark } from './ui';
 import { importFile } from './importers';
 import { backupAll, deleteMap, duplicateMap, isBackup, listMaps, loadMap, requestPersistence, restoreBackup, type MapEntry } from './library';
@@ -70,6 +70,8 @@ function Thumb({ doc }: { doc: Doc | null }) {
 }
 
 /** A map card with hover actions; destructive actions ask once inline. */
+const CARD_ICONS = { duplicate: IDuplicate, group: IGroup, upload: IUpload };
+
 function Card({
   id,
   index = 0,
@@ -86,8 +88,9 @@ function Card({
   title: string;
   meta: ReactNode;
   onOpen: () => void;
-  actions: { label: string; run: () => void | Promise<void> }[];
-  danger?: { label: string; confirm: string; run: () => void | Promise<void> };
+  actions: { label: string; icon: 'duplicate' | 'group' | 'upload'; run: () => void | Promise<void> }[];
+  /** `confirm` is the button in the confirmation; `warning` a line under the question. */
+  danger?: { label: string; confirm: string; warning?: string; run: () => void | Promise<void> };
 }) {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -112,29 +115,37 @@ function Card({
         <span className="card-title">{title || 'Untitled'}</span>
         <span className="card-meta">{meta}</span>
       </button>
-      <div className="card-actions">
-        {confirm && danger ? (
-          <>
-            <button className="danger" disabled={busy} onClick={() => void act(danger.run)}>
+      {!confirm && (
+        <div className="card-actions">
+          {actions.map((a) => {
+            const Icon = CARD_ICONS[a.icon];
+            return (
+              <button key={a.label} className="card-act" disabled={busy} onClick={() => void act(a.run)} aria-label={a.label} data-tip={a.label}>
+                <Icon size={16} />
+              </button>
+            );
+          })}
+          {danger && (
+            <button className="card-act danger" onClick={() => setConfirm(true)} aria-label={danger.label} data-tip={danger.label}>
+              <ITrash size={16} />
+            </button>
+          )}
+        </div>
+      )}
+      {confirm && danger && (
+        <div className="card-confirm" role="alertdialog" aria-label={`Delete ${title || 'Untitled'}?`}>
+          <strong>Delete “{title || 'Untitled'}”?</strong>
+          {danger.warning && <span>{danger.warning}</span>}
+          <div className="card-confirm-actions">
+            <button onClick={() => setConfirm(false)} autoFocus>
+              Keep
+            </button>
+            <button className="solid-danger" disabled={busy} onClick={() => void act(danger.run)}>
               {danger.confirm}
             </button>
-            <button onClick={() => setConfirm(false)}>Keep</button>
-          </>
-        ) : (
-          <>
-            {actions.map((a) => (
-              <button key={a.label} disabled={busy} onClick={() => void act(a.run)}>
-                {a.label}
-              </button>
-            ))}
-            {danger && (
-              <button className="danger" onClick={() => setConfirm(true)}>
-                {danger.label}
-              </button>
-            )}
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
     </li>
   );
 }
@@ -188,13 +199,13 @@ function Account({ member }: { member: Member | null }) {
       <span className="account-name" title={member.email}>
         {member.name}
       </span>
-      <button className="small" onClick={signOut}>
+      <button onClick={signOut}>
         Sign out
       </button>
     </div>
   ) : (
     <>
-      <button className="small" onClick={() => setSigningIn(true)}>
+      <button onClick={() => setSigningIn(true)}>
         Sign in
       </button>
       {signingIn && <SignInDialog onClose={() => setSigningIn(false)} />}
@@ -364,10 +375,11 @@ function LocalDrafts({
             onOpen={() => onOpen(m.id)}
             actions={
               onMove
-                ? [{ label: 'Move to My maps', run: () => onMove(m.id) }]
+                ? [{ label: 'Move to My maps', icon: 'upload', run: () => onMove(m.id) }]
                 : [
                     {
                       label: 'Duplicate',
+                      icon: 'duplicate',
                       run: () => {
                         duplicateMap(m.id);
                         onChange();
@@ -378,6 +390,7 @@ function LocalDrafts({
             danger={{
               label: 'Delete',
               confirm: 'Delete',
+              warning: 'It is only in this browser, so it is gone for good.',
               run: () => {
                 deleteMap(m.id);
                 onChange();
@@ -588,8 +601,11 @@ function Workspace({
         <div className="home-title-row">
           <h1 className="home-title">{title}</h1>
           {hint && <span className="home-hint">{hint}</span>}
-          <span className="spacer" />
-          {group && <button onClick={() => setManaging(true)}>Members{group.role === 'owner' ? ' & settings' : ''}</button>}
+          {group && (
+            <button className="small title-btn" onClick={() => setManaging(true)}>
+              <IGroup size={15} /> Members{group.role === 'owner' ? ' & settings' : ''}
+            </button>
+          )}
         </div>
 
         {(section === 'mine' || groupId) && (
@@ -687,6 +703,7 @@ function Workspace({
                         ? [
                             {
                               label: 'Copy to My maps',
+                              icon: 'duplicate',
                               run: async () => {
                                 await createCloudMap({ ...m.doc, title: m.title }).catch((e) => setError(explain(e)));
                                 setNotice(`Copied “${m.title}” to My maps.`);
@@ -696,19 +713,21 @@ function Workspace({
                         : [
                             {
                               label: 'Duplicate',
+                              icon: 'duplicate',
                               run: async () => {
                                 await createCloudMap({ ...m.doc, title: `${m.title} copy` }).catch((e) => setError(explain(e)));
                                 await loadMaps();
                               },
                             },
-                            ...(groups?.length ? [{ label: 'Copy to group', run: () => setCopying(m) }] : []),
+                            ...(groups?.length ? [{ label: 'Copy to a group', icon: 'group' as const, run: () => setCopying(m) }] : []),
                           ]
                     }
                     danger={
                       canDelete
                         ? {
                             label: 'Delete',
-                            confirm: groupId ? 'Delete for everyone' : 'Delete',
+                            confirm: 'Delete',
+                            warning: groupId ? 'Everyone in the group loses it.' : undefined,
                             run: async () => {
                               try {
                                 await deleteCloudMap(m.id);
@@ -950,7 +969,7 @@ function GroupDialog({
           ))}
         </ul>
 
-        <h3>Invite someone with an account</h3>
+        <h3>Add someone who has an account</h3>
         <form
           className="share-row"
           onSubmit={(e) => {
@@ -1020,16 +1039,19 @@ function GroupDialog({
               </button>
             </form>
             {confirmDelete ? (
-              <div className="share-row">
-                <span className="note warn grow">Delete the group? Its maps go back to their authors' My maps.</span>
-                <button onClick={() => setConfirmDelete(false)}>Keep</button>
-                <button className="danger" onClick={() => void run(async () => (await deleteGroup(group.id), await onGone()))}>
-                  Delete group
-                </button>
+              <div className="confirm-box">
+                <strong>Delete {group.name}?</strong>
+                <span className="note">Its maps go back to the people who made them, in their My maps.</span>
+                <div className="confirm-actions">
+                  <button onClick={() => setConfirmDelete(false)}>Keep</button>
+                  <button className="solid-danger" onClick={() => void run(async () => (await deleteGroup(group.id), await onGone()))}>
+                    Delete group
+                  </button>
+                </div>
               </div>
             ) : (
-              <button className="danger align-start" onClick={() => setConfirmDelete(true)}>
-                Delete group…
+              <button className="danger flush align-start" onClick={() => setConfirmDelete(true)}>
+                <ITrash size={15} /> Delete group…
               </button>
             )}
           </>
@@ -1064,16 +1086,17 @@ function InviteLinksDialog({ groups, initialGroup, onClose }: { groups: Group[];
   const full = (l: SignupLink) => l.usedByNames.length >= l.maxUses;
   const expired = (l: SignupLink) => updatedMs(l.expires) < Date.now();
   const live = (l: SignupLink) => !full(l) && !expired(l);
+  const day = (iso: string) => new Date(updatedMs(iso)).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const status = (l: SignupLink) => {
-    const who = l.usedByNames.length ? `used by ${l.usedByNames.join(', ')}` : 'not used yet';
-    const count = l.maxUses > 1 ? ` (${l.usedByNames.length} of ${l.maxUses})` : '';
-    const until = expired(l) ? 'expired' : full(l) ? 'all places used' : `until ${new Date(updatedMs(l.expires)).toLocaleDateString()}`;
-    return `${who}${count} · ${until}`;
+    const names = l.usedByNames.join(', ');
+    if (l.maxUses <= 1) return l.usedByNames.length ? `Used by ${names}` : expired(l) ? 'Expired, not used' : `One person · until ${day(l.expires)}`;
+    const until = expired(l) ? 'expired' : full(l) ? 'full' : `until ${day(l.expires)}`;
+    return `${l.usedByNames.length}/${l.maxUses} used · ${until}${names ? ` · ${names}` : ''}`;
   };
   return (
-    <Modal title="Invite people" onClose={onClose} width={520}>
+    <Modal title="Invite people" onClose={onClose} width={560}>
       <div className="stack">
-        <p className="note">People sign up through the link with GitHub or with email and password. A link works for 14 days and can be withdrawn at any time. No email is sent: share it however you like.</p>
+        <p className="note">People sign up through the link, with GitHub or email. Links last 14 days and you can withdraw them. Nothing is emailed: share the link yourself.</p>
         <form
           className="stack tight"
           onSubmit={async (e) => {
@@ -1133,21 +1156,24 @@ function InviteLinksDialog({ groups, initialGroup, onClose }: { groups: Group[];
         {links && links.length > 0 && (
           <>
             <h3>Your links</h3>
-            <ul className="member-list">
+            <ul className="link-list">
               {links.map((l) => (
-                <li key={l.id}>
-                  <span>{l.note || 'Invitation'}</span>
-                  <span className="home-hint">
-                    {l.groupName ? `${l.groupName} · ` : ''}
-                    {status(l)}
-                  </span>
-                  <span className="spacer" />
+                <li key={l.id} className={live(l) ? '' : 'dead'}>
+                  <div className="link-main">
+                    <div className="link-title">
+                      <strong>{l.note || 'Invitation link'}</strong>
+                      {l.groupName && <span className="pill">{l.groupName}</span>}
+                    </div>
+                    <div className="link-meta" title={l.usedByNames.length ? `Used by ${l.usedByNames.join(', ')}` : undefined}>
+                      {status(l)}
+                    </div>
+                  </div>
                   {live(l) && (
                     <button className="small" onClick={() => void copy(l.code)}>
-                      {copied === l.code ? 'Copied' : 'Copy link'}
+                      {copied === l.code ? 'Copied' : 'Copy'}
                     </button>
                   )}
-                  <button className="small" onClick={async () => (await deleteSignupLink(l.id).catch((e) => setError(explain(e))), await load())}>
+                  <button className="small subtle" onClick={async () => (await deleteSignupLink(l.id).catch((e) => setError(explain(e))), await load())}>
                     {live(l) ? 'Withdraw' : 'Remove'}
                   </button>
                 </li>

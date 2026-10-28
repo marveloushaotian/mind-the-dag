@@ -647,7 +647,7 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
               { label: 'Example map', onSelect: openExample },
             ]}
           />
-          <button onClick={() => setSharing(true)} title="Share a view-only link">
+          <button onClick={() => setSharing(true)} title="Share with your group or by link">
             Share
           </button>
           <Menu
@@ -810,7 +810,7 @@ export default function Editor({ mapId, initial, onHome, onCreate }: { mapId: st
       </div>
 
       {help && <ShortcutsDialog onClose={() => setHelp(false)} />}
-      {sharing && <ShareDialog doc={doc} onClose={() => setSharing(false)} />}
+      {sharing && <ShareDialog doc={doc} draftId={mapId} onClose={() => setSharing(false)} />}
       {exporting && <ExportDialog doc={doc} theme={theme} format={exporting} onClose={() => setExporting(null)} onDone={flash} />}
     </div>
   );

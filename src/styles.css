@@ -237,3 +237,13 @@ kbd.key { font: inherit; font-size: 12px; font-weight: 500; color: var(--ink); m
 
 textarea { height: auto; padding: 6px 10px; resize: vertical; line-height: 18px; }
 .inline-edit { height: auto !important; min-height: 30px; resize: none; overflow: hidden; }
+
+/* group library */
+.modal h3 { margin: 0; font-size: 12px; font-weight: 600; color: var(--muted); }
+.group-share { display: flex; flex-direction: column; gap: 10px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.modal .note.ok { color: var(--accent-ink); align-self: center; }
+.account { display: flex; align-items: center; gap: 10px; }
+.account-name { font-size: 13px; color: var(--muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-empty { padding: 4px 0; }
+.pill { margin-left: 8px; font-size: 11px; color: var(--accent-ink); background: #24b06414; border-radius: 6px; padding: 1px 6px; }
+.view-byline { font-size: 12px; color: var(--faint); }

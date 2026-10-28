@@ -7,6 +7,8 @@ import { backupAll, deleteMap, duplicateMap, isBackup, listMaps, loadMap, reques
 import { download } from './exporters';
 import { emptyDoc, type Doc } from './model';
 import { docBounds, MetroMap } from './render';
+import { SignInDialog } from './dialogs';
+import { groupEnabled, groupLink, listGroupMaps, removeGroupMap, setGroupLink, signOut, useMember, type GroupMap } from './group';
 
 function ago(t: number): string {
   const s = Math.max(1, Math.round((Date.now() - t) / 1000));
@@ -20,8 +22,8 @@ function ago(t: number): string {
   return new Date(t).toLocaleDateString();
 }
 
-function Thumb({ id }: { id: string }) {
-  const doc = loadMap(id);
+function Thumb({ id, doc: given }: { id?: string; doc?: Doc }) {
+  const doc = given ?? (id ? loadMap(id) : null);
   const b = doc && docBounds(doc);
   if (!doc || !b) return <div className="thumb empty-thumb" />;
   const pad = 24;
@@ -39,7 +41,10 @@ function Card({ entry, onOpen, onChange }: { entry: MapEntry; onOpen: () => void
       <button className="card-main" onClick={onOpen}>
         <Thumb id={entry.id} />
         <span className="card-title">{entry.title || 'Untitled'}</span>
-        <span className="card-meta">{ago(entry.updated)}</span>
+        <span className="card-meta">
+          {ago(entry.updated)}
+          {groupLink(entry.id) && <span className="pill">In group library</span>}
+        </span>
       </button>
       <div className="card-actions">
         {confirm ? (
@@ -48,6 +53,7 @@ function Card({ entry, onOpen, onChange }: { entry: MapEntry; onOpen: () => void
               className="danger"
               onClick={() => {
                 deleteMap(entry.id);
+                setGroupLink(entry.id, null);
                 onChange();
               }}
             >
@@ -75,6 +81,130 @@ function Card({ entry, onOpen, onChange }: { entry: MapEntry; onOpen: () => void
   );
 }
 
+function GroupCard({ map, mine, onOpen, onCopy, onRemoved }: { map: GroupMap; mine: boolean; onOpen: () => void; onCopy: () => void; onRemoved: () => void }) {
+  const [confirm, setConfirm] = useState(false);
+  const [error, setError] = useState(false);
+  return (
+    <li className="card">
+      <button className="card-main" onClick={onOpen}>
+        <Thumb doc={map.doc} />
+        <span className="card-title">{map.title || 'Untitled'}</span>
+        <span className="card-meta">
+          {mine ? 'You' : map.owner.name} · {ago(map.updated)}
+        </span>
+      </button>
+      <div className="card-actions">
+        {confirm ? (
+          <>
+            <button
+              className="danger"
+              onClick={() =>
+                removeGroupMap(map.id).then(onRemoved, () => {
+                  setError(true);
+                  setConfirm(false);
+                })
+              }
+            >
+              Remove
+            </button>
+            <button onClick={() => setConfirm(false)}>Keep</button>
+          </>
+        ) : (
+          <>
+            <button onClick={onCopy}>Make a copy</button>
+            {mine && (
+              <button className="danger" onClick={() => setConfirm(true)} title="Remove from the group library (your draft stays)">
+                {error ? 'Retry remove' : 'Remove'}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function GroupLibrary({ onCreate }: { onCreate: (d: Doc) => void }) {
+  const member = useMember();
+  const [maps, setMaps] = useState<GroupMap[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
+  const load = () => {
+    setError(null);
+    listGroupMaps()
+      .then(setMaps)
+      .catch((e: Error) => setError(e.message));
+  };
+  useEffect(() => {
+    if (member) load();
+    else setMaps(null);
+  }, [member?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!groupEnabled) return null;
+  return (
+    <>
+      <div className="home-h-row">
+        <h2 className="home-h">Group library</h2>
+        <span className="home-hint">{member ? 'Shared by your group · open to view, make a copy to edit' : 'Maps your group has shared'}</span>
+        <span className="spacer" />
+        {member && (
+          <button className="small" onClick={load}>
+            Refresh
+          </button>
+        )}
+      </div>
+      {!member ? (
+        <div className="group-empty">
+          <button onClick={() => setSigningIn(true)}>Sign in to see the group library</button>
+          {signingIn && <SignInDialog onClose={() => setSigningIn(false)} />}
+        </div>
+      ) : error ? (
+        <p className="home-error">{error}</p>
+      ) : maps === null ? (
+        <p className="home-hint">Loading…</p>
+      ) : maps.length === 0 ? (
+        <p className="home-hint">Nothing shared yet. Open a draft and use Share › Share with group.</p>
+      ) : (
+        <ul className="cards">
+          {maps.map((m) => (
+            <GroupCard
+              key={m.id}
+              map={m}
+              mine={m.owner.id === member.id}
+              onOpen={() => (window.location.hash = `#/group/${m.id}`)}
+              onCopy={() => onCreate({ ...structuredClone(m.doc), title: m.doc.title })}
+              onRemoved={load}
+            />
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+function Account() {
+  const member = useMember();
+  const [signingIn, setSigningIn] = useState(false);
+  if (!groupEnabled) return null;
+  return member ? (
+    <div className="account">
+      <span className="account-name" title={member.email}>
+        {member.name}
+      </span>
+      <button className="small" onClick={signOut}>
+        Sign out
+      </button>
+    </div>
+  ) : (
+    <>
+      <button className="small" onClick={() => setSigningIn(true)}>
+        Sign in
+      </button>
+      {signingIn && <SignInDialog onClose={() => setSigningIn(false)} />}
+    </>
+  );
+}
+
 export default function Home({ onOpen, onCreate }: { onOpen: (id: string) => void; onCreate: (d: Doc) => void }) {
   const [maps, setMaps] = useState(listMaps);
   // Re-read after mount: an editor that just closed saves its last changes during unmount.
@@ -90,6 +220,8 @@ export default function Home({ onOpen, onCreate }: { onOpen: (id: string) => voi
     <div className="home">
       <header className="topbar">
         <Wordmark size={17} />
+        <span className="spacer" />
+        <Account />
       </header>
       <main className="home-main">
         <div className="home-actions">
@@ -160,6 +292,7 @@ export default function Home({ onOpen, onCreate }: { onOpen: (id: string) => voi
             </ul>
           </>
         )}
+        <GroupLibrary onCreate={onCreate} />
       </main>
     </div>
   );

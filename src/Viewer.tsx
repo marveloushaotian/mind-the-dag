@@ -1,13 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { IFit, IMinus, IPlus } from './icons';
 import type { Doc } from './model';
 import { usePanZoom, type View } from './panzoom';
 import { MetroMap } from './render';
-import { decodeDoc } from './share';
 import { Wordmark } from './ui';
 
-/** Read-only view of a map shared by link, with a way to save one's own copy. */
-export default function Viewer({ code, onHome, onCopy }: { code: string; onHome: () => void; onCopy: (d: Doc) => void }) {
+/** Read-only view of a shared map (by link or from the group library), with a way to save one's own copy. */
+export default function Viewer({
+  load,
+  onHome,
+  onCopy,
+  byline,
+  actions,
+  errorText = 'This link is incomplete or damaged.',
+}: {
+  load: () => Promise<Doc>;
+  onHome: () => void;
+  onCopy: (d: Doc) => void;
+  byline?: string;
+  actions?: ReactNode;
+  errorText?: string;
+}) {
   const [doc, setDoc] = useState<Doc | null>(null);
   const [error, setError] = useState(false);
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
@@ -16,8 +29,8 @@ export default function Viewer({ code, onHome, onCopy }: { code: string; onHome:
   usePanZoom(svgRef, setView, lastClient);
 
   useEffect(() => {
-    decodeDoc(code).then(setDoc).catch(() => setError(true));
-  }, [code]);
+    load().then(setDoc).catch(() => setError(true));
+  }, [load]);
 
   const fit = useCallback(() => {
     const svg = svgRef.current;
@@ -50,14 +63,16 @@ export default function Viewer({ code, onHome, onCopy }: { code: string; onHome:
         <span className="divider" aria-hidden="true" />
         <span className="view-title">{doc?.title ?? ''}</span>
         <span className="badge">View only</span>
+        {byline && <span className="view-byline">{byline}</span>}
         <div className="spacer" />
+        {actions}
         <button className="primary" disabled={!doc} onClick={() => doc && onCopy(doc)}>
           Make a copy
         </button>
       </header>
       <main className="stage">
         {error ? (
-          <div className="empty">This link is incomplete or damaged.</div>
+          <div className="empty">{errorText}</div>
         ) : (
           <svg
             ref={svgRef}

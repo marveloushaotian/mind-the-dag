@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { IClose } from './icons';
 import type { Doc } from './model';
 import { shareUrl } from './share';
+import { groupEnabled, groupLink, publishMap, setGroupLink, signIn, useMember } from './group';
 
 export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = isMac ? '⌘' : 'Ctrl';
@@ -115,7 +116,104 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function ShareDialog({ doc, onClose }: { doc: Doc; onClose: () => void }) {
+export function SignInDialog({ onClose }: { onClose: () => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await signIn(email, password);
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title="Sign in to the group library" onClose={onClose} width={380}>
+      <form
+        className="stack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <label className="field">
+          <span>Email</span>
+          <input type="email" autoComplete="username" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
+        </label>
+        <label className="field">
+          <span>Password</span>
+          <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </label>
+        {error && <p className="note warn">{error}</p>}
+        <p className="note">Accounts are made by your group's admin. Your drafts stay in this browser either way.</p>
+        <div className="actions">
+          <button type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="primary" disabled={busy || !email || !password}>
+            {busy ? 'Signing in…' : 'Sign in'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** Share with the group library: creates the group copy, or updates it if this draft was shared before. */
+function GroupShare({ doc, draftId }: { doc: Doc; draftId: string }) {
+  const member = useMember();
+  const [linked, setLinked] = useState(() => groupLink(draftId));
+  const [state, setState] = useState<'idle' | 'busy' | 'done'>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
+  if (!groupEnabled) return null;
+  const share = async () => {
+    setState('busy');
+    setError(null);
+    try {
+      const id = await publishMap(doc, linked);
+      setGroupLink(draftId, id);
+      setLinked(id);
+      setState('done');
+    } catch (e) {
+      setError((e as Error).message);
+      setState('idle');
+    }
+  };
+  return (
+    <div className="group-share">
+      <h3>Group library</h3>
+      {member ? (
+        <>
+          <div className="share-row">
+            <button className="primary" onClick={share} disabled={state === 'busy'}>
+              {state === 'busy' ? 'Sharing…' : linked ? 'Update group copy' : 'Share with group'}
+            </button>
+            {state === 'done' && <span className="note ok">{linked ? 'Group copy is up to date' : 'Shared'}</span>}
+          </div>
+          <p className="note">
+            {linked
+              ? 'Your group sees the copy as it was when you last shared it. Update it after you make changes.'
+              : 'Everyone in your group can view it and make their own copy. Only you can update or remove it.'}
+          </p>
+        </>
+      ) : (
+        <>
+          <button onClick={() => setSigningIn(true)}>Sign in to share with your group</button>
+          {signingIn && <SignInDialog onClose={() => setSigningIn(false)} />}
+        </>
+      )}
+      {error && <p className="note warn">{error}</p>}
+    </div>
+  );
+}
+
+export function ShareDialog({ doc, draftId, onClose }: { doc: Doc; draftId: string; onClose: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -132,7 +230,9 @@ export function ShareDialog({ doc, onClose }: { doc: Doc; onClose: () => void })
     }
   };
   return (
-    <Modal title="Share a view-only link" onClose={onClose} width={440}>
+    <Modal title="Share" onClose={onClose} width={440}>
+      <GroupShare doc={doc} draftId={draftId} />
+      <h3>View-only link</h3>
       <div className="share-row">
         <input readOnly value={url ?? 'Preparing…'} onFocus={(e) => e.target.select()} aria-label="Link" />
         <button className="primary" onClick={copy} disabled={!url}>

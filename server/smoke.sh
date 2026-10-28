@@ -167,8 +167,9 @@ titled() { # title [group]
 }
 D1=$(titled Dup); D2=$(titled Dup); D3=$(titled "Dup 2"); GD=$(titled Dup "$G9")
 out=$(docker exec "$C" /pb/pocketbase migrate down 1 --dir=/pb_data --migrationsDir=/pb/pb_migrations 2>&1) || fail "migrate down: $out"
+echo "::notice title=migrate down::$(echo "$out" | tr '\n' ' ' | cut -c1-400)"
 out=$(docker exec "$C" /pb/pocketbase migrate up --dir=/pb_data --migrationsDir=/pb/pb_migrations 2>&1) || fail "migrate up: $out"
-echo "$out"
+echo "::notice title=migrate up::$(echo "$out" | tr '\n' ' ' | cut -c1-400)"
 t() { j "$B/api/collections/maps/records/$1" -H "Authorization: $TA" | jq -r "$2"; }
 [ "$(t "$D1" .title)" = Dup ] || fail "oldest keeps its title"
 [ "$(t "$D2" .title)" = "Dup 3" ] && [ "$(t "$D2" .doc.title)" = "Dup 3" ] || fail "later repeat numbered around existing numbers ($(t "$D2" .title))"

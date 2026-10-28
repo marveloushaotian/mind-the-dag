@@ -35,7 +35,7 @@ spec:
               value: "https://marveloushaotian.github.io,http://localhost:5173,http://localhost:4173"
           resources:
             requests: { cpu: 50m, memory: 128Mi }
-            limits: { cpu: 500m, memory: 256Mi }
+            limits: { cpu: 250m, memory: 256Mi }  # Rahti: CPU limit/request ratio <= 5
           readinessProbe:
             httpGet: { path: /api/health, port: 8090 }
             initialDelaySeconds: 3

@@ -26,6 +26,9 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+        env:
+          # Group library server (PocketBase on CSC Rahti, see server/)
+          VITE_LIBRARY_URL: https://library-mind-the-dag.2.rahtiapp.fi
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

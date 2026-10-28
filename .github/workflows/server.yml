@@ -1,0 +1,34 @@
+name: Group library server
+
+on:
+  push:
+    branches: [main]
+    paths: ['server/**', '.github/workflows/server.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ghcr.io/marveloushaotian/mind-the-dag-server
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          docker build server \
+            --label org.opencontainers.image.source=https://github.com/${{ github.repository }} \
+            --label org.opencontainers.image.description="mind-the-dag group library (PocketBase)" \
+            -t "$IMAGE:latest" -t "$IMAGE:${GITHUB_SHA::7}"
+      - name: Smoke test
+        run: |
+          docker run -d --name pb -p 8090:8090 --user 1000870000:0 "$IMAGE:latest"
+          bash server/smoke.sh http://localhost:8090 pb || (docker logs pb; exit 1)
+      - name: Push
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE:latest"
+          docker push "$IMAGE:${GITHUB_SHA::7}"

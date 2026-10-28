@@ -1,0 +1,74 @@
+# mind-the-dag group library on CSC Rahti (project: mind-the-dag).
+# Import in the Rahti web console (+ > Import YAML) or `oc apply -f rahti.yaml`.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: library-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: library
+  labels: { app: library }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: library }
+  template:
+    metadata:
+      labels: { app: library }
+    spec:
+      containers:
+        - name: pocketbase
+          image: ghcr.io/marveloushaotian/mind-the-dag-server:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8090
+          env:
+            - name: ORIGINS
+              value: "https://marveloushaotian.github.io,http://localhost:5173,http://localhost:4173"
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /api/health, port: 8090 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health, port: 8090 }
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          volumeMounts:
+            - name: data
+              mountPath: /pb_data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: library-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: library
+spec:
+  selector: { app: library }
+  ports:
+    - port: 8090
+      targetPort: 8090
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: library
+spec:
+  to: { kind: Service, name: library }
+  port: { targetPort: 8090 }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

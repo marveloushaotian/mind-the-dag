@@ -98,7 +98,8 @@ try {
   await A.getByRole('button', { name: /all maps/ }).click();
   await A.getByRole('button', { name: 'Invite people' }).click();
   const inv = A.getByRole('dialog', { name: 'Invite people' });
-  await inv.getByLabel(/^For/).fill('Carol');
+  await inv.getByLabel(/^Label/).fill('Carol');
+  await inv.getByLabel('Who can use it').selectOption({ label: 'One person' });
   await inv.getByLabel('Also join group').selectOption({ label: 'Lab' });
   await inv.getByRole('button', { name: 'Create invitation link' }).click();
   const link = await inv.getByLabel('Invitation link').inputValue();
@@ -119,7 +120,7 @@ try {
   await Cpage.locator('.card-title', { hasText: 'Group map' }).waitFor();
   await sleep(1000);
   await Cpage.goto(link);
-  await Cpage.getByText(/already been used/).waitFor();
+  await Cpage.getByText(/places on it have been used/).waitFor();
   await A.goto(groupMapUrl);
 
   log('Bob signs in, joins and sees the group map but not Alice\'s own maps');

@@ -1038,6 +1038,7 @@ function GroupDialog({
 function InviteLinksDialog({ groups, initialGroup, onClose }: { groups: Group[]; initialGroup: string | null; onClose: () => void }) {
   const [note, setNote] = useState('');
   const [group, setGroup] = useState(initialGroup ?? '');
+  const [uses, setUses] = useState(20);
   const [links, setLinks] = useState<SignupLink[] | null>(null);
   const [fresh, setFresh] = useState<SignupLink | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -1054,12 +1055,19 @@ function InviteLinksDialog({ groups, initialGroup, onClose }: { groups: Group[];
       /* clipboard blocked: the field stays selectable */
     }
   };
-  const status = (l: SignupLink) =>
-    l.usedByName ? `used by ${l.usedByName}` : updatedMs(l.expires) < Date.now() ? 'expired' : `works until ${new Date(updatedMs(l.expires)).toLocaleDateString()}`;
+  const full = (l: SignupLink) => l.usedByNames.length >= l.maxUses;
+  const expired = (l: SignupLink) => updatedMs(l.expires) < Date.now();
+  const live = (l: SignupLink) => !full(l) && !expired(l);
+  const status = (l: SignupLink) => {
+    const who = l.usedByNames.length ? `used by ${l.usedByNames.join(', ')}` : 'not used yet';
+    const count = l.maxUses > 1 ? ` (${l.usedByNames.length} of ${l.maxUses})` : '';
+    const until = expired(l) ? 'expired' : full(l) ? 'all places used' : `until ${new Date(updatedMs(l.expires)).toLocaleDateString()}`;
+    return `${who}${count} · ${until}`;
+  };
   return (
     <Modal title="Invite people" onClose={onClose} width={520}>
       <div className="stack">
-        <p className="note">Each link creates one account, with GitHub or with email and password, and works for 14 days. Send it however you like; no email is sent.</p>
+        <p className="note">People sign up through the link with GitHub or with email and password. A link works for 14 days and can be withdrawn at any time. No email is sent: share it however you like.</p>
         <form
           className="stack tight"
           onSubmit={async (e) => {
@@ -1067,7 +1075,7 @@ function InviteLinksDialog({ groups, initialGroup, onClose }: { groups: Group[];
             setBusy(true);
             setError(null);
             try {
-              const l = await createSignupLink(note, group || null);
+              const l = await createSignupLink(note, group || null, uses);
               setFresh(l);
               setNote('');
               await load();
@@ -1079,10 +1087,17 @@ function InviteLinksDialog({ groups, initialGroup, onClose }: { groups: Group[];
             }
           }}
         >
+          <label className="field">
+            <span>Label (only you see it)</span>
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Lab meeting" maxLength={120} />
+          </label>
           <div className="share-row">
             <label className="field">
-              <span>For (optional, only you see this)</span>
-              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Ville" maxLength={120} />
+              <span>Who can use it</span>
+              <select value={uses} onChange={(e) => setUses(Number(e.target.value))}>
+                <option value={20}>Up to 20 people</option>
+                <option value={1}>One person</option>
+              </select>
             </label>
             <label className="field">
               <span>Also join group</span>
@@ -1121,13 +1136,13 @@ function InviteLinksDialog({ groups, initialGroup, onClose }: { groups: Group[];
                     {status(l)}
                   </span>
                   <span className="spacer" />
-                  {!l.usedByName && updatedMs(l.expires) > Date.now() && (
+                  {live(l) && (
                     <button className="small" onClick={() => void copy(l.code)}>
                       {copied === l.code ? 'Copied' : 'Copy link'}
                     </button>
                   )}
                   <button className="small" onClick={async () => (await deleteSignupLink(l.id).catch((e) => setError(explain(e))), await load())}>
-                    {l.usedByName ? 'Remove' : 'Withdraw'}
+                    {live(l) ? 'Withdraw' : 'Remove'}
                   </button>
                 </li>
               ))}

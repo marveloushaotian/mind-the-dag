@@ -309,7 +309,8 @@ export interface SignupLink {
   groupId: string | null;
   groupName: string | null;
   expires: string;
-  usedByName: string | null;
+  maxUses: number;
+  usedByNames: string[];
 }
 export interface SignupInfo {
   valid: boolean;
@@ -324,14 +325,15 @@ const toLink = (r: RecordModel): SignupLink => ({
   groupId: (r.group as string) || null,
   groupName: nameOf(r.expand?.group),
   expires: r.expires as string,
-  usedByName: nameOf(r.expand?.usedBy) ?? ((r.usedBy as string) ? 'someone' : null),
+  maxUses: Math.max(1, (r.maxUses as number) || 1),
+  usedByNames: ((r.expand?.usedBy as RecordModel[] | undefined) ?? []).map((u) => (u.name as string) || 'someone'),
 });
 export const joinUrl = (code: string) => `${window.location.origin}${window.location.pathname}#/join/${code}`;
 
-export async function createSignupLink(note: string, groupId: string | null): Promise<SignupLink> {
+export async function createSignupLink(note: string, groupId: string | null, maxUses: number): Promise<SignupLink> {
   const r = await client()
     .collection('signups')
-    .create({ note: note.trim(), group: groupId ?? '', createdBy: me().id }, { expand: 'group,usedBy' });
+    .create({ note: note.trim(), group: groupId ?? '', maxUses, createdBy: me().id }, { expand: 'group,usedBy' });
   return toLink(r);
 }
 export async function listSignupLinks(): Promise<SignupLink[]> {

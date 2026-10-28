@@ -89,12 +89,15 @@ routerAdd(
 );
 
 // ---------------------------------------------------------------- invitation links (sign-up)
+// A link is valid while it has not expired and fewer people than maxUses (1-20) used it.
 
 // A new link: the server makes the code and the expiry (14 days); a group must be one of yours.
 onRecordCreateRequest((e) => {
   e.record.set("code", $security.randomString(32));
   e.record.set("expires", new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString().replace("T", " "));
-  e.record.set("usedBy", "");
+  e.record.set("usedBy", []);
+  const n = e.record.getInt("maxUses");
+  e.record.set("maxUses", Math.min(20, Math.max(1, n || 1)));
   const g = e.record.getString("group");
   if (g && !e.hasSuperuserAuth()) {
     let member = true;
@@ -108,15 +111,16 @@ onRecordCreateRequest((e) => {
   e.next();
 }, "signups");
 
-// New accounts need an unused, unexpired invitation link (superusers excepted).
+// New accounts need a link that still has room and has not expired (superusers excepted).
 onRecordCreateRequest((e) => {
   if (!e.hasSuperuserAuth()) {
     const code = e.record.getString("inviteCode");
     let ok = false;
     if (code) {
       try {
-        const s = e.app.findFirstRecordByFilter("signups", "code = {:c} && usedBy = ''", { c: code });
-        ok = new Date(s.getString("expires").replace(" ", "T")) > new Date();
+        const s = e.app.findFirstRecordByFilter("signups", "code = {:c}", { c: code });
+        const room = s.getStringSlice("usedBy").length < Math.max(1, s.getInt("maxUses"));
+        ok = room && new Date(s.getString("expires").replace(" ", "T")) > new Date();
       } catch (_) {
         ok = false;
       }
@@ -127,13 +131,13 @@ onRecordCreateRequest((e) => {
   e.next();
 }, "users");
 
-// After sign-up: the link is used up, and its group (if any) is joined.
+// After sign-up: count the use, and join the link's group (if any).
 onRecordAfterCreateSuccess((e) => {
   const code = e.record.getString("inviteCode");
   if (code) {
     try {
       const s = e.app.findFirstRecordByFilter("signups", "code = {:c}", { c: code });
-      s.set("usedBy", e.record.id);
+      s.set("usedBy+", e.record.id);
       e.app.save(s);
       const g = s.getString("group");
       if (g) {
@@ -174,7 +178,7 @@ routerAdd("GET", "/api/mtd/signups/{code}", (e) => {
     return e.json(200, { valid: false, reason: "unknown" });
   }
   const expired = new Date(s.getString("expires").replace(" ", "T")) <= new Date();
-  const used = s.getString("usedBy") !== "";
+  const used = s.getStringSlice("usedBy").length >= Math.max(1, s.getInt("maxUses"));
   let inviter = "Someone";
   let group = "";
   try {
@@ -197,8 +201,9 @@ routerAdd(
     } catch (_) {
       throw new NotFoundError("This invitation link does not exist.");
     }
-    const used = s.getString("usedBy");
-    if (used && used !== e.auth.id) throw new BadRequestError("This invitation link has already been used.");
+    const users = s.getStringSlice("usedBy");
+    const already = users.indexOf(e.auth.id) >= 0;
+    if (!already && users.length >= Math.max(1, s.getInt("maxUses"))) throw new BadRequestError("All places on this invitation link have been used.");
     if (new Date(s.getString("expires").replace(" ", "T")) <= new Date()) throw new BadRequestError("This invitation link has expired.");
     const g = s.getString("group");
     $app.runInTransaction((tx) => {
@@ -217,8 +222,10 @@ routerAdd(
           tx.save(m);
         }
       }
-      s.set("usedBy", e.auth.id);
-      tx.save(s);
+      if (!already) {
+        s.set("usedBy+", e.auth.id);
+        tx.save(s);
+      }
     });
     return e.json(200, { group: g });
   },

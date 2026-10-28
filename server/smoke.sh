@@ -130,6 +130,17 @@ L2=$(j -X POST "$B/api/collections/signups/records" -H "Authorization: $TA" -d "
 [ "$(count memberships "$TC" "&filter=group%3D%27$G2%27")" -ge 1 ] || fail "existing member joined via link"
 [ "$(count signups "$TC")" = 0 ] || fail "links visible to others"
 [ "$(code -X DELETE "$B/api/collections/signups/records/$LID" -H "Authorization: $TA")" = 204 ] || fail "admin revokes a link"
+M=$(j -X POST "$B/api/collections/signups/records" -H "Authorization: $TA" -d "{\"createdBy\":\"$A_ID\",\"maxUses\":2}")
+MC=$(echo "$M" | jq -r .code); [ "$(echo "$M" | jq -r .maxUses)" = 2 ] || fail "link for several people"
+for who in f g; do
+  s=$(code -X POST "$B/api/collections/users/records" -d "{\"email\":\"$who@example.test\",\"password\":\"ci-user-pass-123\",\"passwordConfirm\":\"ci-user-pass-123\",\"inviteCode\":\"$MC\"}")
+  [ "$s" = 200 ] || fail "sign-up $who with a shared link (got $s)"
+done
+s=$(code -X POST "$B/api/collections/users/records" -d "{\"email\":\"h@example.test\",\"password\":\"ci-user-pass-123\",\"passwordConfirm\":\"ci-user-pass-123\",\"inviteCode\":\"$MC\"}")
+[ "$s" != 200 ] || fail "sign-up beyond the link's limit"
+[ "$(j "$B/api/collections/signups/records/$(echo "$M" | jq -r .id)" -H "Authorization: $TA" | jq '.usedBy | length')" = 2 ] || fail "uses recorded"
+big=$(j -X POST "$B/api/collections/signups/records" -H "Authorization: $TA" -d "{\"createdBy\":\"$A_ID\",\"maxUses\":500}" | jq -r .maxUses)
+[ "$big" = 20 ] || fail "limit capped at 20 (got $big)"
 ok "invitation links"
 
 # --- settings and CORS

@@ -64,7 +64,7 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
             <h2>This invitation link can't be used</h2>
             <p className="signin-sub">
               {info.reason === 'used'
-                ? 'It has already been used to create an account.'
+                ? 'All the places on it have been used.'
                 : info.reason === 'expired'
                   ? 'It has expired (links work for 14 days).'
                   : 'The link is incomplete, or it was withdrawn.'}{' '}

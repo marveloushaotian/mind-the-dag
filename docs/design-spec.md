@@ -64,9 +64,27 @@ files share the same footprint as a capsule extends away from its anchor.
 ## 4. Sections
 
 - Sections are shown as **tinted areas, never outlined**: radius 16, padding of at least 24, and a numbered header chip at the top left.
-- Use at most 4 tints per map, taken from the palette's tint row.
+- Each preset offers eight paired light/dark fills. Sections can also use a custom fill, with contrast-aware text.
 
 ## 5. Typography — Inter only
+
+Editor chrome uses a separate UI scale, defined once in CSS and shared by
+sidebars, menus, forms and dialogs:
+
+| UI role | Weight · size / line height |
+|---|---|
+| Dialog title | 600 · 20 / 28 |
+| Panel title | 600 · 16 / 24 |
+| Body, controls and navigation | 400 · 15 / 22 |
+| Field labels and group headings | 600 · 14 / 20 |
+| Notes, status and shortcuts | 400 · 13 / 20 |
+
+Use only the shipped 400, 600 and 700 weights. Controls share a 36 px base
+height. Field labels share a left edge, paired controls align at their input
+edges, and colour controls use one theme per row in narrow panels. Containers
+grow or scroll without shrinking form fields. Palette grids adapt their
+column count before compressing colour values. Diagram text keeps its own
+publication scale below.
 
 | Role | Weight · size |
 |---|---|
@@ -254,7 +272,7 @@ Tints: `#F1F3EC` `#EFF3F7` `#F6F1E3` `#F7EEE9`
 6. Labels are Inter 600 · 13 in ink, 10 px clear, on one side per run, and never on a line.
 7. Where connections cross, the one with fewer lines breaks with a 4 px gap each side.
 8. Stations on a run are evenly spaced, on multiples of 8 and at least 64 apart.
-9. Sections are tinted, never outlined, with at most 4 tints per map.
+9. Sections are tinted, never outlined, with eight preset fills and optional custom colours.
 10. Light grey `#B8BEC4` means inactive and is never used for a line.
 11. At most 7 line colours, assigned in palette order; planned = cased line, optional = dashed outline.
 12. The legend follows the Lines list, then the shape key, with no frame.

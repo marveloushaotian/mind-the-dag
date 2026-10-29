@@ -1,11 +1,64 @@
-import { useMemo } from 'react';
-import { defaultFileBadge, emptyDoc, stationMarker, snapStation, type Derived, type Station, type StationKind } from './model';
+import { useLayoutEffect, useMemo, useRef, type RefObject } from 'react';
+import { defaultFileBadge, emptyDoc, stationMarker, type Derived, type Station, type StationKind } from './model';
 import { MetroMap } from './render';
+import { reducedMotion } from './motion';
+import { followPlacement } from './placement';
+import type { View } from './panzoom';
 import type { ThemeId } from './tokens';
 import type { Pt } from './geometry';
 
 /** Reuse the actual renderer so the placement ghost matches every station type. */
-export function PlacementGhost({ point, kind, theme }: { point: Pt; kind: StationKind; theme: ThemeId }) {
+export function PlacementGhost({ point, kind, theme, view, position }: {
+  point: Pt; kind: StationKind; theme: ThemeId; view: View; position: RefObject<Pt | null>;
+}) {
+  const node = useRef<SVGGElement>(null);
+  const initial = useRef(point);
+  const motion = useRef({ current: point, target: point, view, time: 0, frame: 0 });
+  useLayoutEffect(() => {
+    const state = motion.current;
+    const paint = (p: Pt) => {
+      state.current = p;
+      position.current = p;
+      node.current?.setAttribute('transform', `translate(${p.x} ${p.y})`);
+    };
+    state.target = point;
+    if (state.view !== view || reducedMotion()) {
+      cancelAnimationFrame(state.frame);
+      state.frame = 0;
+      state.view = view;
+      paint(point);
+      return;
+    }
+    paint(state.current);
+    if (state.frame) return;
+    state.time = performance.now();
+    const tick = (time: number) => {
+      const p = followPlacement(state.current, state.target, time - state.time, state.view.k);
+      state.time = time;
+      paint(p);
+      state.frame = p === state.target ? 0 : requestAnimationFrame(tick);
+    };
+    state.frame = requestAnimationFrame(tick);
+  }, [point, view, position]);
+  useLayoutEffect(() => {
+    const state = motion.current;
+    const preference = matchMedia('(prefers-reduced-motion: reduce)');
+    const settle = () => {
+      if (!preference.matches) return;
+      cancelAnimationFrame(state.frame);
+      state.frame = 0;
+      state.current = state.target;
+      position.current = state.target;
+      node.current?.setAttribute('transform', `translate(${state.target.x} ${state.target.y})`);
+    };
+    preference.addEventListener('change', settle);
+    return () => {
+      preference.removeEventListener('change', settle);
+      cancelAnimationFrame(state.frame);
+      state.frame = 0;
+      position.current = null;
+    };
+  }, [position]);
   const ghost = useMemo(() => {
     const doc = emptyDoc();
     doc.legend.show = false;
@@ -13,8 +66,8 @@ export function PlacementGhost({ point, kind, theme }: { point: Pt; kind: Statio
       ...((kind === 'start' || kind === 'stop') ? { file: defaultFileBadge() } : {}) }];
     return <MetroMap doc={doc} theme={theme} exporting={kind !== 'junction'} />;
   }, [kind, theme]);
-  const p = snapStation(point, 'h');
-  return <g className="placement-ghost" transform={`translate(${p.x} ${p.y})`} pointerEvents="none" aria-hidden="true">{ghost}</g>;
+  return <g ref={node} className="placement-ghost" transform={`translate(${initial.current.x} ${initial.current.y})`}
+    pointerEvents="none" aria-hidden="true">{ghost}</g>;
 }
 
 export function StationHalo({ station, derived, zoom, colour, source = false }: {

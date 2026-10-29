@@ -65,7 +65,7 @@ const GROUPS: [string, [string, string[]][]][] = [
     [
       ['Select', ['V']],
       ['Station', ['S']],
-      ['Connect', ['L']],
+      ['Connect', ['C']],
       ['Section', ['R']],
     ],
   ],
@@ -115,7 +115,7 @@ const GROUPS: [string, [string, string[]][]][] = [
 
 export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   return (
-    <Modal title="Keyboard shortcuts" onClose={onClose} width={640}>
+    <Modal title="Keyboard shortcuts" onClose={onClose} width={840}>
       <div className="shortcut-grid">
         {GROUPS.map(([g, rows]) => (
           <section key={g}>

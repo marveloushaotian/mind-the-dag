@@ -1,11 +1,13 @@
 import type { Doc } from './model';
 import { parseMmd } from './mmd';
+import { validateMapColours } from './tokens';
 
 function validate(d: unknown): Doc {
   const x = d as Doc;
   if (!x || x.version !== 1 || !Array.isArray(x.stations) || !Array.isArray(x.edges) || !Array.isArray(x.lines)) {
     throw new Error('not a mind-the-dag map (version 1)');
   }
+  validateMapColours(x);
   return x;
 }
 

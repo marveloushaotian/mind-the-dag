@@ -97,7 +97,10 @@ export function useMapLayoutMotion(svg: RefObject<SVGSVGElement | null>, feedbac
       const was = old.get(key);
       if (dragged.includes(next.owner) || (next.owner === '' && directPaths)) { stop(key); continue; }
       if (!was) {
-        if (key.startsWith('file:')) start(key, [{ node: next.node, frames: [{ opacity: 0 }, { opacity: 1 }], duration: 140 }]);
+        // New-station badges belong to its placement handoff; existing stations
+        // still fade their badge when a type/property edit enables it.
+        if (key.startsWith('file:') && old.has(`shape:${next.owner}`))
+          start(key, [{ node: next.node, frames: [{ opacity: 0 }, { opacity: 1 }], duration: 140 }]);
         continue;
       }
       if (was.kind !== next.kind) {

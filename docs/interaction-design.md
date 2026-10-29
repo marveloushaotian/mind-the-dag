@@ -28,9 +28,10 @@ Escape or a blank-space click ends the chain. Previewing never adds history.
 ## Cursors describe the next action
 
 Select uses an open-hand toolbar icon and canvas cursor, with a closed hand
-while dragging. Edges use a pointing hand for selection. Station,
-Connect and Section have distinct crosshair cursors with a small station,
-connection or frame mark; their hotspot stays at the crosshair centre. Hovering
+while dragging. Edges use a pointing hand for selection. Station uses a plain
+crosshair alongside its grey placement preview, avoiding a second station icon.
+Connect and Section use crosshair cursors with a small connection or frame mark;
+their hotspot stays at the crosshair centre. Hovering
 a station in Connect uses a pointing hand, matching the target preview.
 
 Holding Space shows an open hand for temporary canvas panning; dragging closes
@@ -41,8 +42,13 @@ Space on a focused toolbar button retains native keyboard activation.
 
 ## Motion communicates the operation
 
-- Placement: a 440 ms uniform scale arrival, with a short fading ring. Width and
-  height always use the same scale; glyphs never squash, stretch or skew.
+- Placement: a grey preview follows continuous pointer positions with 24 ms
+  settling and at most 8 screen pixels of lag. Only the committed landing snaps
+  to the grid. On click its painted position, complete shape and 40% opacity
+  hand over to a 440 ms uniform scale rebound; the badge settles with it. Touch
+  retains the small arrival. Width and height always use the same scale; glyphs
+  never squash, stretch or skew. Camera changes and reduced motion place the
+  preview immediately; leaving the canvas cancels its pending frame.
 - Target acquisition: a 240 ms settling halo. The pointer remains immediate.
 - Connection: a 340 ms scale rebound at the receiving station and a
   160 ms transition from the provisional stroke to the committed stroke.
@@ -114,8 +120,37 @@ selected pattern. These rules use standard [SVG stroke semantics](https://www.w3
 
 Nordic is the default for new maps: pine, mist blue, ochre gold, heather and
 terracotta are the primary colours, with sea and ink available for larger maps.
-Light/dark colours and four section tints are defined together. Existing maps
+Light/dark colours and eight section tints are defined together. Existing maps
 retain their selected palette; choosing Nordic is an explicit, undoable edit.
+
+Each map can also save one named custom palette, with paired light/dark line
+colours and section fills. Editing starts from a copy of the current palette;
+Cancel leaves the map unchanged and Apply is a single undo step. Switching to
+a preset retains the saved custom palette so it can be reactivated later.
+Map files and shared copies carry these colours with them.
+
+Line colours belong in the existing line editor, and section fills belong in
+the section inspector. Both offer a native colour picker and a hex field,
+with independent light/dark values. Partial or invalid hex text never reaches
+the document. A custom value overrides its palette slot; choosing a slot or
+Use palette colour removes the override. Section text adapts to its fill for
+readability. Canvas, legend, previews and exports share the same colour resolver.
+
+Auto match themes links custom colours in either direction. The edited theme
+is authoritative for that edit; its partner is generated once, without a
+feedback effect. Matching preserves Oklab hue while adjusting lightness and
+chroma for the theme. Lines remain distinct from their background; fills stay
+quiet. Out-of-gamut colours reduce chroma rather than clipping RGB channels.
+The matching preference and both resolved hex colours are saved with the map.
+New custom pairs and newly copied preset palettes start linked. Existing manual
+pairs stay independent until matching is explicitly enabled. Turning it off
+preserves both colours for independent adjustment. Enabling it regenerates
+the partner from the currently visible theme; a palette editor does this only
+in its draft, so Cancel still changes nothing.
+
+Station (S) and Connect (C) are neighbouring shortcuts. In Select, pressing or
+dragging on empty canvas never changes the grid dots. The selection rectangle
+owns its fill and stroke; the root gesture class only selects the cursor.
 
 Hollow is a direct fourth stroke choice beside Solid, Dashed and Dotted. It
 keeps the 10 px lane footprint, with two 3 px walls and closed rounded ends;

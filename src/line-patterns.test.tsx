@@ -56,7 +56,7 @@ describe('coherent line patterns', () => {
     doc.lines[0].planned = true;
     const paths = strokes(renderToStaticMarkup(<MetroMap doc={doc} exporting />));
     expect(paths).toHaveLength(4);
-    expect(paths.every((path) => path.dash === linePaint(doc.palette, 0, 'light', 'dashed').dash)).toBe(true);
+    expect(paths.every((path) => path.dash === linePaint(doc, 0, 'light', 'dashed').dash)).toBe(true);
   });
 
   it.each(['light', 'dark'] as const)('renders a transparent hollow stroke consistently on the canvas, legend and swatch (%s)', (theme) => {
@@ -67,7 +67,7 @@ describe('coherent line patterns', () => {
     const paths = strokes(svg);
     expect(paths).toHaveLength(2);
     expect(paths.every((path) => path.width === tokens.planned.wall && path.dash === undefined)).toBe(true);
-    const colour = lineStyle(doc.palette, 0, theme).color;
+    const colour = lineStyle(doc, 0, theme).color;
     expect((svg.match(new RegExp(`fill="none" stroke="${colour}"`, 'g')) ?? [])).toHaveLength(2);
     expect(svg).not.toContain(`stroke="${tokens.themes[theme].surface}"`);
     expect((svg.match(/A 3.5 3.5 0 0 1/g) ?? [])).toHaveLength(4);
@@ -128,7 +128,7 @@ describe('coherent line patterns', () => {
     preserveSurvivingPorts(committed.doc, removed);
     const after = edgeGeometry(derive(removed), removed.edges[0])!.lines.find((l) => l.id === 'hollow')!;
     // Compare the actual hollow outline, not only the routing centreline.
-    const draw = (doc: typeof removed, lane: typeof after) => renderToStaticMarkup(<LineStroke geometry={edgeGeometry(derive(doc), doc.edges[0])!} path={lane} line={doc.lines.find((l) => l.id === 'hollow')!} palette={doc.palette} theme="light" />);
+    const draw = (doc: typeof removed, lane: typeof after) => renderToStaticMarkup(<LineStroke geometry={edgeGeometry(derive(doc), doc.edges[0])!} path={lane} line={doc.lines.find((l) => l.id === 'hollow')!} palette={doc} theme="light" />);
     expect(draw(removed, after)).toBe(draw(committed.doc, before));
   });
 });

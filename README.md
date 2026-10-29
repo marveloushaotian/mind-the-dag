@@ -6,6 +6,9 @@ A web editor for metro-map style workflow diagrams (nf-core × Mini Metro inspir
 ## What it does
 
 - Draw a pipeline as a metro map: stations (steps), lines (data streams), sections.
+- Choose preset or custom map palettes, with eight section fills and individual
+  line/fill overrides. Custom colours have paired light/dark values and travel
+  with map files and shared copies.
 - Lines run at 0°, 45° and 90° with rounded, concentric bends; bundled lines stay
   12 px apart and keep one order across the map.
 - Export SVG, PDF (Inter embedded, journal scale 1 px = 0.5 pt) and PNG (300 dpi).
@@ -29,7 +32,7 @@ palette, theme, legend and title block.
 
 | Key | Action |
 |---|---|
-| V · S · L · R | Select · Station · Connect · Section |
+| V · S · C · R | Select · Station · Connect · Section |
 | Click with Station | Place an independent station of the selected type; keep clicking to lay out the map |
 | Click A, then B with Connect | Join existing stations with the highlighted line; preview only near another station; continue from B or press Esc to finish |
 | Double-click, Enter | Rename a station on the canvas |

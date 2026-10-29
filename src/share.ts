@@ -4,6 +4,7 @@
  * make their own copy. Fragments are never sent to the server.
  */
 import type { Doc } from './model';
+import { validateMapColours } from './tokens';
 
 const toB64Url = (bytes: Uint8Array) => {
   let s = '';
@@ -31,6 +32,7 @@ export async function decodeDoc(code: string): Promise<Doc> {
   const json = await pipe(fromB64Url(code), new DecompressionStream('deflate-raw'));
   const d = JSON.parse(new TextDecoder().decode(json)) as Doc;
   if (!d || d.version !== 1 || !Array.isArray(d.stations)) throw new Error('not a mind-the-dag map');
+  validateMapColours(d);
   return d;
 }
 

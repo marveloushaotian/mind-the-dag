@@ -1,7 +1,7 @@
 import { useId, type ReactNode } from 'react';
 import { hollowPath, laneToLeftOffset, offsetFitsCorners, offsetPolyline, roundedPath, routeCentre, type Pt } from './geometry';
 import { derive, laneOffset, lanePoint, stationMarker, PITCH, type Derived, type Doc, type Edge, type LabelSide, type Line, type Station } from './model';
-import { linePaint, tints, tokens, type PaletteId, type ThemeId } from './tokens';
+import { contrastRatio, linePaint, sectionFill, sectionInk, tokens, type PaletteSource, type ThemeId } from './tokens';
 
 /**
  * Pure SVG rendering of a Doc in the mind-the-dag style. Interactive editors
@@ -357,11 +357,11 @@ export function LineStroke({ geometry, path, line, palette, theme, preview = fal
   geometry: EdgeGeometry;
   path: EdgeGeometry['lines'][number];
   line: Line;
-  palette: PaletteId;
+  palette: PaletteSource;
   theme: ThemeId;
   preview?: boolean;
 }) {
-  const paint = linePaint(palette, line.slot, theme, line.pattern);
+  const paint = linePaint(palette, line.slot, theme, line.pattern, W, line.colour);
   const stroke = { stroke: paint.color, strokeDasharray: paint.dash, strokeLinecap: paint.cap };
   return (
     <g opacity={preview ? 0.55 : undefined} data-line-stroke={line.id} data-line-pattern={paint.pattern} data-connection-preview={preview ? '' : undefined}>
@@ -381,26 +381,29 @@ export function LineStroke({ geometry, path, line, palette, theme, preview = fal
 export function MetroMap({ doc, theme = 'light', exporting = false, selected, previewConnection }: { doc: Doc } & RenderOptions) {
   const th = themeColours(theme);
   const dv = derive(doc);
-  const tintList = tints(doc.palette, theme);
   const isSel = (k: string) => selected?.has(k) ?? false;
   const usedLines = new Set(doc.edges.flatMap((e) => e.lines));
 
   // --- sections
-  const sections = doc.sections.map((s, i) => (
-    <g key={s.id} data-sel={`section:${s.id}`}>
-      <rect x={s.x} y={s.y} width={s.w} height={s.h} rx={16} fill={tintList[s.tint % tintList.length]} />
-      {!exporting && isSel(`section:${s.id}`) && (
-        <rect x={s.x - 2} y={s.y - 2} width={s.w + 4} height={s.h + 4} rx={18} fill="none" stroke={ACCENT} strokeWidth={1.5} strokeDasharray="6 4" />
-      )}
-      <circle cx={s.x + 26} cy={s.y + 26} r={10} fill={th.ink} />
-      <text x={s.x + 26} y={s.y + 30} textAnchor="middle" fontSize={11} fontWeight={700} fill={th.surface}>
-        {i + 1}
-      </text>
-      <text x={s.x + 44} y={s.y + 31} fontSize={14} fontWeight={700} fill={th.ink}>
-        {s.name}
-      </text>
-    </g>
-  ));
+  const sections = doc.sections.map((s, i) => {
+    const fill = sectionFill(doc, s, theme);
+    const ink = sectionInk(fill, theme);
+    return (
+      <g key={s.id} data-sel={`section:${s.id}`}>
+        <rect x={s.x} y={s.y} width={s.w} height={s.h} rx={16} fill={fill} />
+        {!exporting && isSel(`section:${s.id}`) && (
+          <rect x={s.x - 2} y={s.y - 2} width={s.w + 4} height={s.h + 4} rx={18} fill="none" stroke={ACCENT} strokeWidth={1.5} strokeDasharray="6 4" />
+        )}
+        <circle cx={s.x + 26} cy={s.y + 26} r={10} fill={ink} />
+        <text x={s.x + 26} y={s.y + 30} textAnchor="middle" fontSize={11} fontWeight={700} fill={fill}>
+          {i + 1}
+        </text>
+        <text x={s.x + 44} y={s.y + 31} fontSize={14} fontWeight={700} fill={ink}>
+          {s.name}
+        </text>
+      </g>
+    );
+  });
 
   const obstacles: { id: string; box: Box }[] = doc.stations.map((s) => {
     return { id: s.id, box: stationMarker(dv, s) };
@@ -450,7 +453,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pr
     for (const ln of g.lines) {
       const line = doc.lines.find((l) => l.id === ln.id)!;
       ownEls.push(
-        <LineStroke key={`${e.id}-${ln.id}`} geometry={g} path={ln} line={line} palette={doc.palette} theme={theme}
+        <LineStroke key={`${e.id}-${ln.id}`} geometry={g} path={ln} line={line} palette={doc} theme={theme}
           preview={!exporting && previewConnection?.edgeId === e.id && previewConnection.lineId === ln.id} />,
       );
     }
@@ -720,7 +723,9 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pr
 
     if (s.label) {
       const sec = sectionAt(doc, s);
-      const haloColour = sec ? tintList[sec.tint % tintList.length] : exporting ? null : th.surface;
+      const haloColour = sec ? sectionFill(doc, sec, theme) : exporting ? null : th.surface;
+      const labelInk = sec ? sectionInk(sectionFill(doc, sec, theme), theme) : th.ink;
+      const mutedInk = sec && contrastRatio(sectionFill(doc, sec, theme), th.muted) < 3 ? labelInk : th.muted;
       const { x, y, anchor } = labelAt.get(s.id) ?? labelPlacement(s, dv, sideOf.get(s.id));
       const common = { x, y, textAnchor: anchor, fontSize: 13, fontWeight: 600 } as const;
       // The halo is a separate stroked copy underneath (paint-order is not portable to PDF).
@@ -740,8 +745,8 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pr
           {haloColour && <text {...common} fill={haloColour} stroke={haloColour} strokeWidth={4} strokeLinejoin="round" aria-hidden="true">
             {body(haloColour)}
           </text>}
-          <text data-sel={`station:${s.id}`} {...common} fill={s.optional || s.inactive ? th.muted : th.ink}>
-            {body(th.muted)}
+          <text data-sel={`station:${s.id}`} {...common} fill={s.optional || s.inactive ? mutedInk : labelInk}>
+            {body(mutedInk)}
           </text>
         </g>,
       );
@@ -759,7 +764,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pr
     const kinds = legendKinds(doc, dv);
     const lay = legendLayout(doc, rows.map((l) => l.name), kinds);
     rows.forEach((l, i) => {
-      const paint = linePaint(doc.palette, l.slot, theme, l.pattern);
+      const paint = linePaint(doc, l.slot, theme, l.pattern, W, l.colour);
       const stroke = { stroke: paint.color, strokeDasharray: paint.dash, strokeLinecap: paint.cap };
       const lx = x + lay.lines[i].dx;
       const ry = y + lay.lines[i].dy;

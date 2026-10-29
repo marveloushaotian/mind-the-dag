@@ -76,7 +76,8 @@ export function Popover({ trigger, children, label, placement = 'bottom' }: { tr
         {trigger}
       </button>
       {pos && (
-        <div className="popover" style={{ left: pos.left, top: pos.top, bottom: pos.bottom }}>
+        <div className="popover" style={{ left: pos.left, top: pos.top, bottom: pos.bottom,
+          maxHeight: pos.top === undefined ? 'calc(100vh - 24px)' : `calc(100vh - ${pos.top}px - 12px)` }}>
           {children}
         </div>
       )}

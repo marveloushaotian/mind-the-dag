@@ -9,7 +9,7 @@ import { Inspector, LeftRail, TOOLS, type Tool } from './panels';
 import { edgeGeometry, MetroMap } from './render';
 import { useDocument } from './store';
 import { usePanZoom } from './panzoom';
-import { lineStyle, type ThemeId } from './tokens';
+import { lineStyle, tints, tokens, type ThemeId } from './tokens';
 import { Menu, Wordmark } from './ui';
 import { ShareDialog, ShortcutsDialog } from './dialogs';
 import { MORPH } from './motion';
@@ -17,6 +17,7 @@ import { FusionPreview, PlacementGhost, StationHalo } from './CanvasFeedback';
 import { connectionTarget, connectStations, previewStationMerge, snapTarget } from './interaction';
 import { useStationMotion } from './useStationMotion';
 import { useMapLayoutMotion } from './useMapLayoutMotion';
+import { followPlacement } from './placement';
 
 const NO_DRAGGED_STATIONS: readonly string[] = [];
 
@@ -91,6 +92,7 @@ export default function Editor({
   const lastCamera = useRef(view);
   const svgRef = useRef<SVGSVGElement>(null);
   const feedbackRef = useRef<SVGGElement>(null);
+  const placementPosition = useRef<{ x: number; y: number } | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const inspectorRef = useRef<HTMLElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -347,7 +349,8 @@ export default function Editor({
     if (!active) return;
     const change = connectStations(doc, from, to, active, uid('e'));
     if (change) {
-      const colour = lineStyle(doc.palette, doc.lines.find((l) => l.id === active)!.slot, theme).color;
+      const line = doc.lines.find((l) => l.id === active)!;
+      const colour = lineStyle(doc, line.slot, theme, line.colour).color;
       stationMotion.request({ kind: 'connect', id: to, edgeId: change.edgeId, lineId: active, colour });
       replace(change.doc);
     }
@@ -520,7 +523,12 @@ export default function Editor({
         return;
       }
       const s = createStation(w, stationKind);
-      stationMotion.request({ kind: 'place', id: s.id });
+      // A move and click can arrive before the next frame. Keep that handoff
+      // close to the pointer instead of flying in from a stale painted position.
+      const origin = e.pointerType === 'mouse' && placementPosition.current
+        ? followPlacement(placementPosition.current, w, 0, view.k) : undefined;
+      stationMotion.request({ kind: 'place', id: s.id, colour: tokens.themes[theme].muted,
+        from: origin });
       update((d) => { d.stations.push(s); });
       setHovered(s.id);
       setCursor(w);
@@ -756,9 +764,9 @@ export default function Editor({
       const h = Math.abs(drag.cur.y - drag.start.y);
       if (w >= 64 && h >= 48) {
         const id = uid('sec');
-        update((d) => void d.sections.push({ id, name: `Section ${d.sections.length + 1}`, x, y, w, h, tint: d.sections.length % 4 }));
-        setSelected(new Set([`section:${id}`]));
+        update((d) => void d.sections.push({ id, name: `Section ${d.sections.length + 1}`, x, y, w, h, tint: d.sections.length % tints(d, theme).length }));
         setTool('select');
+        setSelected(new Set([`section:${id}`]));
       }
     }
     clearDrag();
@@ -794,7 +802,8 @@ export default function Editor({
     <MetroMap doc={displayDoc} theme={theme} selected={selected}
       previewConnection={candidate && active ? { edgeId: candidate.edgeId, lineId: active } : undefined} />
   ), [displayDoc, theme, selected, candidate, active]);
-  const activeStyle = active ? lineStyle(doc.palette, doc.lines.find((l) => l.id === active)!.slot, theme) : null;
+  const activeDefinition = doc.lines.find((l) => l.id === active);
+  const activeStyle = activeDefinition ? lineStyle(doc, activeDefinition.slot, theme, activeDefinition.colour) : null;
   // A selected connection with a diagonal (or a cross-over step) gets a handle to slide it along.
   const bendInfo = useMemo(() => {
     const keys = [...selected];
@@ -927,11 +936,12 @@ export default function Editor({
             <rect width="100%" height="100%" fill="url(#grid)" />
             <g transform={`scale(${view.k}) translate(${-view.x} ${-view.y})`}>
               {mapView}
-              {tool === 'station' && cursor && !hoveredStation && !drag && <PlacementGhost point={cursor} kind={stationKind} theme={theme} />}
+              {tool === 'station' && cursor && !hoveredStation && !drag && <PlacementGhost
+                point={toWorld(lastClient.current.x, lastClient.current.y)} kind={stationKind} theme={theme} view={view} position={placementPosition} />}
               {tool === 'line' && pendingStation && activeStyle && <StationHalo station={pendingStation}
                 derived={displayDerived} zoom={view.k} colour={activeStyle.color} source />}
               {(tool === 'line' || tool === 'station') && hoveredStation && !drag && <StationHalo key={hoveredStation.id} station={hoveredStation}
-                derived={displayDerived} zoom={view.k} colour={tool === 'line' && activeStyle ? activeStyle.color : '#1f6fae'} />}
+                derived={displayDerived} zoom={view.k} colour={tool === 'line' && activeStyle ? activeStyle.color : tokens.themes[theme].muted} />}
               {selectedSections.map((s) => (
                 <rect key={`h-${s.id}`} data-handle={s.id} className="handle" x={s.x + s.w - 6} y={s.y + s.h - 6} width={12} height={12} rx={3} />
               ))}
@@ -943,7 +953,7 @@ export default function Editor({
               )}
               {drag?.kind === 'marquee' && (
                 <rect
-                  className="marquee"
+                  className="selection-marquee"
                   x={Math.min(drag.start.x, drag.cur.x)}
                   y={Math.min(drag.start.y, drag.cur.y)}
                   width={Math.abs(drag.cur.x - drag.start.x)}

@@ -1,8 +1,9 @@
 import { IConnect, IDown, IMore, IPlus, ISection, ISelect, IStation, ITrash, IUp } from './icons';
 import { changeLinePattern, changeStationKind, defaultFileBadge, pruneLines, reverseEdge, uid, usedLines, type Doc, type LabelSide, type StationKind } from './model';
 import { hollowPath } from './geometry';
-import { linePaint, lineStyle, paletteLines, PALETTE_IDS, tints, tokens, type LinePattern, type ThemeId } from './tokens';
+import { linePaint, lineStyle, paletteLines, sectionFill, tints, tokens, type ColourPair, type LinePattern, type ThemeId } from './tokens';
 import { Field, Popover, Seg, Toggle } from './ui';
+import { CustomColour, PalettePicker } from './ColourControls';
 
 type Update = (fn: (d: Doc) => void, key?: string) => void;
 export type Tool = 'select' | 'station' | 'line' | 'section';
@@ -10,12 +11,12 @@ export type Tool = 'select' | 'station' | 'line' | 'section';
 export const TOOLS: { id: Tool; label: string; key: string; Icon: () => React.ReactElement }[] = [
   { id: 'select', label: 'Select', key: 'V', Icon: () => <ISelect /> },
   { id: 'station', label: 'Station', key: 'S', Icon: () => <IStation /> },
-  { id: 'line', label: 'Connect', key: 'L', Icon: () => <IConnect /> },
+  { id: 'line', label: 'Connect', key: 'C', Icon: () => <IConnect /> },
   { id: 'section', label: 'Section', key: 'R', Icon: () => <ISection /> },
 ];
 
-export function Swatch({ doc, slot, theme, pattern, planned, size = 28 }: { doc: Doc; slot: number; theme: ThemeId; pattern?: LinePattern; planned?: boolean; size?: number }) {
-  const paint = linePaint(doc.palette, slot, theme, pattern, 4);
+export function Swatch({ doc, slot, theme, pattern, planned, colour, size = 28 }: { doc: Doc; slot: number; theme: ThemeId; pattern?: LinePattern; planned?: boolean; colour?: ColourPair; size?: number }) {
+  const paint = linePaint(doc, slot, theme, pattern, 4, colour);
   const stroke = { stroke: paint.color, strokeDasharray: paint.dash, strokeLinecap: paint.cap };
   return (
     <svg width={size} height="12" aria-hidden="true" className="swatch">
@@ -52,7 +53,7 @@ export function LeftRail({
   setActive: (id: string) => void;
   theme: ThemeId;
 }) {
-  const slots = paletteLines(doc.palette);
+  const slots = paletteLines(doc);
   const move = (i: number, by: number) =>
     update((d) => {
       const j = i + by;
@@ -63,7 +64,7 @@ export function LeftRail({
     const id = uid('l');
     update((d) => {
       const taken = new Set(d.lines.map((x) => x.slot));
-      const slot = paletteLines(d.palette).findIndex((_, k) => !taken.has(k));
+      const slot = paletteLines(d).findIndex((_, k) => !taken.has(k));
       d.lines.push({ id, name: `Line ${d.lines.length + 1}`, slot: slot < 0 ? d.lines.length : slot });
     });
     setActive(id);
@@ -100,7 +101,7 @@ export function LeftRail({
           <li key={l.id} className={`${active === l.id ? 'active' : ''}${used.has(l.id) ? '' : ' unused'}`}>
             <button className="line-choice" onClick={() => setActive(l.id)} aria-pressed={active === l.id}
               aria-label={`Use ${l.name || 'Untitled line'}`} title={`Use ${l.name || 'Untitled line'}`}>
-              <Swatch doc={doc} slot={l.slot} theme={theme} pattern={l.pattern} planned={l.planned} />
+              <Swatch doc={doc} slot={l.slot} theme={theme} pattern={l.pattern} planned={l.planned} colour={l.colour} />
               <span className="line-name">{l.name || 'Untitled line'}</span>
               <span className="line-selected" aria-hidden="true">{active === l.id ? '✓' : ''}</span>
             </button>
@@ -111,21 +112,28 @@ export function LeftRail({
               <Field label="Colour" group>
                 <div className="slots">
                 {slots.map((s, k) => (
-                  <button key={k} className={`slot${l.slot === k ? ' on' : ''}`} title={s.name} aria-label={s.name} onClick={() => update((d) => void (d.lines[i].slot = k))}>
+                  <button key={k} className={`slot${!l.colour && l.slot === k ? ' on' : ''}`} title={s.name} aria-label={s.name} onClick={() => update((d) => {
+                    d.lines[i].slot = k;
+                    delete d.lines[i].colour;
+                  })}>
                     <Swatch doc={doc} slot={k} theme={theme} size={22} />
                   </button>
                 ))}
                 </div>
               </Field>
+              <CustomColour label="Custom colour" value={l.colour} theme={theme} role="line"
+                base={{ light: lineStyle(doc, l.slot, 'light').color, dark: lineStyle(doc, l.slot, 'dark').color }}
+                onChange={(colour) => update((d) => void (d.lines[i].colour = colour), `colour-${l.id}`)}
+                onReset={() => update((d) => { delete d.lines[i].colour; })} />
               <Seg
                 label="Pattern"
-                value={l.planned ? 'hollow' : linePaint(doc.palette, l.slot, theme, l.pattern).pattern}
+                value={l.planned ? 'hollow' : linePaint(doc, l.slot, theme, l.pattern).pattern}
                 onChange={(v) => update((d) => changeLinePattern(d.lines[i], v))}
                 options={[
-                  ['solid', <span className="pattern-choice"><Swatch doc={doc} slot={l.slot} theme={theme} pattern="solid" size={44} /><span>Solid</span></span>],
-                  ['dashed', <span className="pattern-choice"><Swatch doc={doc} slot={l.slot} theme={theme} pattern="dashed" size={44} /><span>Dashed</span></span>],
-                  ['dotted', <span className="pattern-choice"><Swatch doc={doc} slot={l.slot} theme={theme} pattern="dotted" size={44} /><span>Dotted</span></span>],
-                  ['hollow', <span className="pattern-choice"><Swatch doc={doc} slot={l.slot} theme={theme} pattern="hollow" size={44} /><span>Hollow</span></span>],
+                  ['solid', <span className="pattern-choice"><Swatch doc={doc} slot={l.slot} theme={theme} pattern="solid" colour={l.colour} size={44} /><span>Solid</span></span>],
+                  ['dashed', <span className="pattern-choice"><Swatch doc={doc} slot={l.slot} theme={theme} pattern="dashed" colour={l.colour} size={44} /><span>Dashed</span></span>],
+                  ['dotted', <span className="pattern-choice"><Swatch doc={doc} slot={l.slot} theme={theme} pattern="dotted" colour={l.colour} size={44} /><span>Dotted</span></span>],
+                  ['hollow', <span className="pattern-choice"><Swatch doc={doc} slot={l.slot} theme={theme} pattern="hollow" colour={l.colour} size={44} /><span>Hollow</span></span>],
                 ]}
               />
               <div className="line-order">
@@ -208,20 +216,7 @@ export function Inspector({
     return (
       <div className="stack">
         <h3>Map</h3>
-        <Field label="Palette" group>
-          <div className="palettes">
-            {PALETTE_IDS.map((p) => (
-              <button key={p} className={`palette${doc.palette === p ? ' on' : ''}`} onClick={() => update((d) => void (d.palette = p))}>
-                <span className="chips">
-                  {[0, 1, 2, 3].map((k) => (
-                    <i key={k} style={{ background: lineStyle(p, k, theme).color }} />
-                  ))}
-                </span>
-                {p[0].toUpperCase() + p.slice(1)}
-              </button>
-            ))}
-          </div>
-        </Field>
+        <PalettePicker doc={doc} theme={theme} update={update} />
         <Field label="Theme" group>
           <Seg
             label="Theme"
@@ -384,7 +379,7 @@ export function Inspector({
                     })
                   }
                 />
-                <Swatch doc={doc} slot={l.slot} theme={theme} pattern={l.pattern} planned={l.planned} size={20} />
+                <Swatch doc={doc} slot={l.slot} theme={theme} pattern={l.pattern} planned={l.planned} colour={l.colour} size={20} />
                 {l.name}
               </label>
             ))}
@@ -413,7 +408,7 @@ export function Inspector({
     const i = doc.sections.findIndex((s) => s.id === id);
     const s = doc.sections[i];
     if (!s) return null;
-    const tl = tints(doc.palette, theme);
+    const tl = tints(doc, theme);
     const swap = (j: number) =>
       update((d) => {
         [d.sections[j], d.sections[i]] = [d.sections[i], d.sections[j]];
@@ -427,10 +422,17 @@ export function Inspector({
         <Field label="Tint" group>
           <div className="tints">
             {tl.map((c, k) => (
-              <button key={k} className={s.tint === k ? 'on' : ''} style={{ background: c }} onClick={() => update((d) => void (d.sections[i].tint = k))} aria-label={`Tint ${k + 1}`} />
+              <button key={k} className={!s.fill && s.tint === k ? 'on' : ''} style={{ background: c }} onClick={() => update((d) => {
+                d.sections[i].tint = k;
+                delete d.sections[i].fill;
+              })} aria-label={`Tint ${k + 1}`} />
             ))}
           </div>
         </Field>
+        <CustomColour label="Custom fill" value={s.fill} theme={theme} role="fill"
+          base={{ light: sectionFill(doc, { tint: s.tint }, 'light'), dark: sectionFill(doc, { tint: s.tint }, 'dark') }}
+          onChange={(fill) => update((d) => void (d.sections[i].fill = fill), `fill-${s.id}`)}
+          onReset={() => update((d) => { delete d.sections[i].fill; })} />
         <Field label="Order" group>
           <div className="row">
             <button className="icon" disabled={i === 0} onClick={() => swap(i - 1)} aria-label="Earlier">

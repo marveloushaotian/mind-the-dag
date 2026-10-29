@@ -16,8 +16,8 @@ describe('tokens', () => {
     expect(s.pattern).toBe('dashed');
   });
   it('has tints for both themes', () => {
-    expect(tints('field').length).toBe(4);
-    expect(tints('field', 'dark').length).toBe(4);
+    expect(tints('field').length).toBe(8);
+    expect(tints('field', 'dark').length).toBe(8);
   });
 
   it('starts new maps in Nordic and retains the five proposed primary colours', () => {

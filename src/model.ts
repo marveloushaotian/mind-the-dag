@@ -1,5 +1,5 @@
 import type { Axis, Pt } from './geometry';
-import type { LinePattern, PaletteId } from './tokens';
+import type { ColourPair, CustomPalette, LinePattern, PaletteId } from './tokens';
 import { tokens } from './tokens';
 import { orderStationLanes } from './lane-order';
 
@@ -42,6 +42,7 @@ export interface Line {
   pattern?: LinePattern;
   /** Legacy cased-line flag, retained for saved maps and nf-metro imports. */
   planned?: boolean;
+  colour?: ColourPair;
 }
 
 export function changeLinePattern(line: Line, pattern: LinePattern): void {
@@ -68,6 +69,7 @@ export interface Section {
   w: number;
   h: number;
   tint: number;
+  fill?: ColourPair;
 }
 
 export function reverseEdge(edge: Edge): void {
@@ -84,7 +86,8 @@ export interface Doc {
   titlePos: Pt;
   /** Place the title block above the map until it is dragged. */
   titleAuto?: boolean;
-  palette: PaletteId;
+  palette: PaletteId | 'custom';
+  customPalette?: CustomPalette;
   lines: Line[];
   stations: Station[];
   edges: Edge[];

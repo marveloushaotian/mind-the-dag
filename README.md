@@ -38,6 +38,8 @@ palette, theme, legend and title block.
 | Double-click, Enter | Rename a station on the canvas |
 | Alt-drag a section | Move it together with the stations inside |
 | Drag the bend handle | Slide a selected connection's bend |
+| Place or drag near an aligned object | Gently align station rows/columns, route bends and section edges; temporary guides show the match |
+| Hold ⌘/Ctrl while placing or dragging | Temporarily skip object alignment |
 | Drag on empty canvas | Select an area (Shift adds) |
 | Shift-click | Add to selection |
 | ⌘/Ctrl C · X · V · D · A | Copy · cut · paste · duplicate · select all |

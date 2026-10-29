@@ -78,6 +78,7 @@ const GROUPS: [string, [string, string[]][]][] = [
       ['Rename a station', ['Double-click', '/', 'Enter']],
       ['Move a section with its stations', ['Alt', 'Drag']],
       ['Slide a bend along a connection', ['Drag the handle']],
+      ['Temporarily skip alignment', [MOD, 'Drag']],
     ],
   ],
   [

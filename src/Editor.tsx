@@ -11,13 +11,16 @@ import { useDocument } from './store';
 import { usePanZoom } from './panzoom';
 import { lineStyle, tints, tokens, type ThemeId } from './tokens';
 import { Menu, Wordmark } from './ui';
-import { ShareDialog, ShortcutsDialog } from './dialogs';
+import { isMac, ShareDialog, ShortcutsDialog } from './dialogs';
 import { MORPH } from './motion';
 import { FusionPreview, PlacementGhost, StationHalo } from './CanvasFeedback';
 import { connectionTarget, connectStations, previewStationMerge, snapTarget } from './interaction';
 import { useStationMotion } from './useStationMotion';
 import { useMapLayoutMotion } from './useMapLayoutMotion';
 import { followPlacement } from './placement';
+import { alignedPoint, alignAnchors, bendAtCoordinate, bendCoordinate, pointAnchors, sectionAnchors, stationAlignmentTargets,
+  type AlignmentAnchor, type AlignmentGuide, type AlignmentLocks } from './alignment';
+import type { Pt } from './geometry';
 
 const NO_DRAGGED_STATIONS: readonly string[] = [];
 
@@ -28,7 +31,7 @@ type DragState =
   | { kind: 'resize'; id: string; start: { x: number; y: number }; orig: { w: number; h: number }; moved: boolean }
   | { kind: 'legend' | 'title'; start: { x: number; y: number }; orig: { x: number; y: number }; moved: boolean }
   | { kind: 'newSection'; start: { x: number; y: number }; cur: { x: number; y: number } }
-  | { kind: 'bend'; id: string; A: { x: number; y: number }; B: { x: number; y: number }; axis: 'h' | 'v'; moved: boolean }
+  | { kind: 'bend'; id: string; A: Pt; B: Pt; at: Pt; grab: number; axis: 'h' | 'v'; moved: boolean }
   | { kind: 'marquee'; start: { x: number; y: number }; cur: { x: number; y: number }; base: Set<string> };
 
 
@@ -93,6 +96,10 @@ export default function Editor({
   const svgRef = useRef<SVGSVGElement>(null);
   const feedbackRef = useRef<SVGGElement>(null);
   const placementPosition = useRef<{ x: number; y: number } | null>(null);
+  const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
+  const alignmentLocks = useRef<AlignmentLocks>({});
+  const dragTargets = useRef<AlignmentAnchor[]>([]);
+  const placementTargets = useMemo(() => tool === 'station' ? stationAlignmentTargets(doc) : [], [doc, tool]);
   const titleRef = useRef<HTMLInputElement>(null);
   const inspectorRef = useRef<HTMLElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -105,9 +112,20 @@ export default function Editor({
     hoveredRef.current = id;
     setHoveredId(id);
   };
+  const clearAlignment = () => {
+    alignmentLocks.current = {};
+    setAlignmentGuides([]);
+  };
+  const align = (moving: AlignmentAnchor[], targets: AlignmentAnchor[], bypass = false) => {
+    const result = alignAnchors(moving, targets, view.k, alignmentLocks.current, bypass);
+    alignmentLocks.current = result.locks;
+    setAlignmentGuides(result.guides);
+    return result;
+  };
   const clearPointer = () => {
     setCursor(null);
     setHovered(null);
+    if (!drag) clearAlignment();
   };
   const setSpace = (held: boolean) => {
     space.current = held;
@@ -124,6 +142,8 @@ export default function Editor({
     setDrag(null);
     setMergeTargetId(null);
     mergeTargetRef.current = null;
+    dragTargets.current = [];
+    clearAlignment();
   };
   const cancelGesture = () => {
     cancelDragRef.current?.();
@@ -159,6 +179,7 @@ export default function Editor({
     lastCamera.current = view;
     if (!cursor || (tool !== 'line' && tool !== 'station')) return;
     const point = toWorld(lastClient.current.x, lastClient.current.y);
+    clearAlignment();
     setCursor(point);
     const target = snapTarget(doc, derived, point, view.k, hoveredRef.current, tool === 'line' ? pending : null);
     hoveredRef.current = target?.id ?? null;
@@ -522,7 +543,9 @@ export default function Editor({
         setSelected(new Set([`station:${occupied.id}`]));
         return;
       }
+      const alignment = align(pointAnchors('placement', w), placementTargets, e.metaKey || e.ctrlKey);
       const s = createStation(w, stationKind);
+      Object.assign(s, alignedPoint(w, s, alignment));
       // A move and click can arrive before the next frame. Keep that handoff
       // close to the pointer instead of flying in from a stale painted position.
       const origin = e.pointerType === 'mouse' && placementPosition.current
@@ -533,6 +556,7 @@ export default function Editor({
       setHovered(s.id);
       setCursor(w);
       setSelected(new Set());
+      clearAlignment();
       return;
     }
 
@@ -541,21 +565,30 @@ export default function Editor({
       clearPointer();
     }
 
+    clearAlignment();
+
     const handle = (e.target as Element).getAttribute?.('data-handle');
 
     const bendHandle = (e.target as Element).getAttribute?.('data-bend');
     if (bendHandle && bendInfo) {
-      setDrag({ kind: 'bend', id: bendHandle, A: bendInfo.A, B: bendInfo.B, axis: bendInfo.axis, moved: false });
+      dragTargets.current = stationAlignmentTargets(doc, [], bendHandle, true);
+      setDrag({ kind: 'bend', id: bendHandle, A: bendInfo.A, B: bendInfo.B, at: bendInfo.at,
+        grab: bendInfo.axis === 'h' ? w.x - bendInfo.at.x : w.y - bendInfo.at.y, axis: bendInfo.axis, moved: false });
       return;
     }
     if (handle) {
       const s = doc.sections.find((x) => x.id === handle);
-      if (s) setDrag({ kind: 'resize', id: s.id, start: w, orig: { w: s.w, h: s.h }, moved: false });
+      if (s) {
+        dragTargets.current = doc.sections.filter((other) => other.id !== s.id).flatMap(sectionAnchors);
+        setDrag({ kind: 'resize', id: s.id, start: w, orig: { w: s.w, h: s.h }, moved: false });
+      }
       return;
     }
 
     if (tool === 'section' && (!h || h.kind === 'section')) {
-      const p = { x: snap(w.x), y: snap(w.y) };
+      dragTargets.current = doc.sections.flatMap(sectionAnchors);
+      const alignment = align(pointAnchors('corner', w), dragTargets.current, e.metaKey || e.ctrlKey);
+      const p = alignedPoint(w, { x: snap(w.x), y: snap(w.y) }, alignment);
       setDrag({ kind: 'newSection', start: p, cur: p });
       return;
     }
@@ -589,12 +622,14 @@ export default function Editor({
     if (h.kind === 'station') {
       const ids = [...sel].filter((s) => s.startsWith('station:')).map((s) => s.slice(8));
       const orig = new Map(doc.stations.filter((s) => ids.includes(s.id)).map((s) => [s.id, { x: s.x, y: s.y }]));
+      dragTargets.current = stationAlignmentTargets(doc, ids);
       setDrag({ kind: 'stations', ids: [h.id, ...ids.filter((i) => i !== h.id)], start: w, orig, moved: false });
     } else if (h.kind === 'section') {
       const s = doc.sections.find((x) => x.id === h.id)!;
       const members = new Map<string, { x: number; y: number }>();
       if (e.altKey)
         for (const st of doc.stations) if (st.x >= s.x && st.x <= s.x + s.w && st.y >= s.y && st.y <= s.y + s.h) members.set(st.id, { x: st.x, y: st.y });
+      dragTargets.current = doc.sections.filter((other) => other.id !== s.id).flatMap(sectionAnchors);
       setDrag({ kind: 'section', id: s.id, start: w, orig: { x: s.x, y: s.y }, members, moved: false });
     } else if (h.kind === 'legend') {
       const g = svgRef.current?.querySelector('[data-legend-origin]');
@@ -613,11 +648,18 @@ export default function Editor({
     lastClient.current = { x: e.clientX, y: e.clientY };
     if ((tool === 'line' || tool === 'station') && !drag && !space.current) {
       const point = toWorld(e.clientX, e.clientY);
-      setCursor((current) => tool === 'station' ? point : current ?? point);
       const h = hit(e.target);
       const exclude = tool === 'line' ? pending : null;
       const direct = h?.kind === 'station' && h.id !== exclude ? derived.byId.get(h.id) : null;
-      setHovered((direct ?? snapTarget(doc, derived, point, view.k, tool === 'line' ? hoveredRef.current : null, exclude))?.id ?? null);
+      const hovered = direct ?? snapTarget(doc, derived, point, view.k, tool === 'line' ? hoveredRef.current : null, exclude);
+      setHovered(hovered?.id ?? null);
+      if (tool === 'station' && !hovered) {
+        const alignment = align(pointAnchors('placement', point), placementTargets, e.metaKey || e.ctrlKey);
+        setCursor(alignedPoint(point, point, alignment));
+      } else {
+        clearAlignment();
+        setCursor((current) => tool === 'station' ? point : current ?? point);
+      }
     }
     if (!drag) return;
     if (drag.kind === 'pan') {
@@ -625,23 +667,27 @@ export default function Editor({
       return;
     }
     const w = toWorld(e.clientX, e.clientY);
+    const bypass = e.metaKey || e.ctrlKey;
     if (drag.kind === 'newSection') {
-      setDrag({ ...drag, cur: { x: snap(w.x), y: snap(w.y) } });
+      const alignment = align(pointAnchors('corner', w), dragTargets.current, bypass);
+      setDrag({ ...drag, cur: alignedPoint(w, { x: snap(w.x), y: snap(w.y) }, alignment) });
       return;
     }
     if (drag.kind === 'bend') {
       if (!drag.moved) {
+        const distance = (drag.axis === 'h' ? w.x - drag.at.x : w.y - drag.at.y) - drag.grab;
+        if (Math.abs(distance) * view.k < 3) return;
         cancelDragRef.current = checkpoint();
         setDrag({ ...drag, moved: true });
       }
-      const u = drag.axis === 'h' ? w.x : w.y;
-      const a = drag.axis === 'h' ? drag.A.x : drag.A.y;
-      const du = (drag.axis === 'h' ? drag.B.x : drag.B.y) - a;
-      const dv = Math.abs((drag.axis === 'h' ? drag.B.y : drag.B.x) - (drag.axis === 'h' ? drag.A.y : drag.A.x));
-      let bend: number;
-      if (Math.abs(du) >= dv) bend = (Math.sign(du) * (u - a) - dv / 2) / Math.max(1, Math.abs(du) - dv);
-      else bend = (u - a) / du;
-      bend = Math.min(1, Math.max(0, Math.round(bend * 100) / 100));
+      const axis = drag.axis === 'h' ? 'x' : 'y';
+      const point = { ...drag.at, [axis]: w[axis] - drag.grab };
+      const end = [bendCoordinate(drag.A, drag.B, drag.axis, 0), bendCoordinate(drag.A, drag.B, drag.axis, 1)];
+      const targets = dragTargets.current.filter((t) => t.axis === axis && t.value >= Math.min(...end) && t.value <= Math.max(...end));
+      const alignment = align(pointAnchors('bend', point), targets, bypass);
+      const p = alignedPoint(point, point, alignment);
+      let bend = bendAtCoordinate(drag.A, drag.B, drag.axis, p[axis]);
+      if (!alignment.locks[axis]) bend = Math.round(bend * 100) / 100;
       preview((d) => {
         const ed = d.edges.find((x) => x.id === drag.id);
         if (ed) ed.bend = bend;
@@ -688,8 +734,11 @@ export default function Editor({
       const lead = doc.stations.find((s) => s.id === drag.ids[0]);
       const o = drag.orig.get(drag.ids[0]);
       if (!lead || !o) return;
-      const p = snapStation({ x: o.x + dx, y: o.y + dy }, lead.axis);
-      const target = drag.ids.length === 1 ? snapTarget(doc, derived, p, view.k, mergeTargetRef.current, lead.id) : null;
+      const raw = { x: o.x + dx, y: o.y + dy };
+      const target = drag.ids.length === 1 ? snapTarget(doc, derived, raw, view.k, mergeTargetRef.current, lead.id) : null;
+      const moving = [...drag.orig].flatMap(([id, p]) => pointAnchors(`station:${id}`, { x: p.x + dx, y: p.y + dy }));
+      const alignment = align(moving, dragTargets.current, bypass || !!target);
+      const p = alignedPoint(raw, snapStation(raw, lead.axis), alignment);
       mergeTargetRef.current = target?.id ?? null;
       setMergeTargetId(target?.id ?? null);
       const ddx = p.x - o.x;
@@ -705,8 +754,13 @@ export default function Editor({
       });
     } else if (drag.kind === 'section') {
       // 8 px across, 24 px down (common multiple of the 8 px grid and the 6 px half-lane).
-      const ddx = snap(dx, 8);
-      const ddy = snap(dy, 24);
+      const section = doc.sections.find((s) => s.id === drag.id);
+      if (!section) return;
+      const raw = { x: drag.orig.x + dx, y: drag.orig.y + dy };
+      const alignment = align(sectionAnchors({ ...section, ...raw }), dragTargets.current, bypass);
+      const p = alignedPoint(raw, { x: drag.orig.x + snap(dx, 8), y: drag.orig.y + snap(dy, 24) }, alignment);
+      const ddx = p.x - drag.orig.x;
+      const ddy = p.y - drag.orig.y;
       preview((d) => {
         const s = d.sections.find((x) => x.id === drag.id);
         if (!s) return;
@@ -721,11 +775,17 @@ export default function Editor({
         }
       });
     } else if (drag.kind === 'resize') {
+      const section = doc.sections.find((s) => s.id === drag.id);
+      if (!section) return;
+      const raw = { x: section.x + Math.max(96, drag.orig.w + dx), y: section.y + Math.max(64, drag.orig.h + dy) };
+      const targets = dragTargets.current.filter((t) => t.value >= (t.axis === 'x' ? section.x + 96 : section.y + 64));
+      const alignment = align(pointAnchors('corner', raw), targets, bypass);
+      const p = alignedPoint(raw, { x: section.x + Math.max(96, snap(drag.orig.w + dx)), y: section.y + Math.max(64, snap(drag.orig.h + dy)) }, alignment);
       preview((d) => {
         const s = d.sections.find((x) => x.id === drag.id);
         if (!s) return;
-        s.w = Math.max(96, snap(drag.orig.w + dx));
-        s.h = Math.max(64, snap(drag.orig.h + dy));
+        s.w = p.x - s.x;
+        s.h = p.y - s.y;
       });
     } else if (drag.kind === 'legend' || drag.kind === 'title') {
       const p = { x: snap(drag.orig.x + dx), y: snap(drag.orig.y + dy) };
@@ -937,7 +997,15 @@ export default function Editor({
             <g transform={`scale(${view.k}) translate(${-view.x} ${-view.y})`}>
               {mapView}
               {tool === 'station' && cursor && !hoveredStation && !drag && <PlacementGhost
-                point={toWorld(lastClient.current.x, lastClient.current.y)} kind={stationKind} theme={theme} view={view} position={placementPosition} />}
+                point={cursor} kind={stationKind} theme={theme} view={view} position={placementPosition} />}
+              {alignmentGuides.length > 0 && <g className="alignment-guides" data-alignment-guides pointerEvents="none" aria-hidden="true">
+                {alignmentGuides.map((guide) => <line key={guide.axis} data-alignment-axis={guide.axis}
+                  x1={guide.axis === 'x' ? guide.value : guide.from - 12 / view.k}
+                  y1={guide.axis === 'y' ? guide.value : guide.from - 12 / view.k}
+                  x2={guide.axis === 'x' ? guide.value : guide.to + 12 / view.k}
+                  y2={guide.axis === 'y' ? guide.value : guide.to + 12 / view.k}
+                  vectorEffect="non-scaling-stroke" />)}
+              </g>}
               {tool === 'line' && pendingStation && activeStyle && <StationHalo station={pendingStation}
                 derived={displayDerived} zoom={view.k} colour={activeStyle.color} source />}
               {(tool === 'line' || tool === 'station') && hoveredStation && !drag && <StationHalo key={hoveredStation.id} station={hoveredStation}
@@ -985,11 +1053,15 @@ export default function Editor({
           )}
 
           {mergeTarget && <div className="canvas-hint" role="status">Release to merge into {mergeTarget.label || 'this station'}</div>}
+          {drag && alignmentGuides.length > 0 && !mergeTarget && <div className="canvas-hint">
+            <span>Aligned</span><span className="hint-key">Hold {isMac ? '⌘' : 'Ctrl'} to skip alignment</span>
+          </div>}
 
           {!empty && (tool === 'station' || tool === 'line') && (
             <div className="canvas-hint">
               <span>{tool === 'station' ? 'Click to place a station' : pendingStation ? hoveredStation ? candidate ? 'Click to connect' : 'Already connected · Click to continue' : 'Approach another station to preview' : 'Click a station to start'}</span>
               <span className="hint-key">Esc {tool === 'station' ? 'to select' : 'to finish'}</span>
+              {alignmentGuides.length > 0 && <span className="hint-key">Hold {isMac ? '⌘' : 'Ctrl'} to skip alignment</span>}
             </div>
           )}
 

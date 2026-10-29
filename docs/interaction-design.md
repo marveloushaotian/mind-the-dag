@@ -163,6 +163,34 @@ nf-metro imports with the legacy flag keep their cased appearance, including
 legacy dashes. Choosing any explicit stroke style clears that flag so it cannot
 silently override a new Solid/Dashed/Dotted/Hollow selection.
 
+## Gentle alignment
+
+Placement and station dragging acquire horizontal/vertical references within
+4 screen pixels and release beyond 7, at every zoom. The unsnapped pointer
+determines proximity, so ordinary grid rounding never enlarges the magnet.
+The matched axis keeps the exact reference coordinate, including imported
+off-grid values; the other axis keeps its usual grid behaviour. Stations use
+their route anchor, not the midpoint of an expanded multi-line capsule.
+
+Station rows/columns and straight route segments provide references. A group
+can acquire a reference with any member but receives one shared translation.
+All moving stations and their changing routes are excluded from the frozen
+gesture targets. Single-station fusion takes precedence over alignment.
+
+Connection bend handles align to other bends and straight runs along their
+editable axis. Grabbing a handle preserves its pointer offset. Snapped bend
+parameters retain full precision; ordinary free movement keeps the existing
+rounding. Section movement, creation and bottom-right resizing align edges to
+other section edges. Minimum resize dimensions remain enforced, and Alt-drag
+still moves a section's contents by the same translation.
+
+Guides are thin, finite, non-interactive and constant in screen weight. They
+exist only in the editor overlay and disappear on release/cancellation; they
+are never saved or exported. Hold Command/Control to bypass alignment. Drag
+edits continue to own one undo checkpoint, and Escape restores both the map
+and its preceding history. Alignment positions objects without connecting or
+merging them automatically.
+
 ## Fusion rules
 
 Dragging one station close to another previews fusion. The acquisition/release

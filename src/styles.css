@@ -180,6 +180,8 @@ input[type='checkbox'] { accent-color: var(--ink); width: 15px; height: 15px; ma
 .empty kbd { font-size: var(--text-note); line-height: var(--leading-note); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
 .station-glyph { transform-origin: 0 0; }
 .placement-ghost { opacity: 0.4; }
+.alignment-guides { stroke: var(--focus); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0.65; }
+.app.dark .alignment-guides { stroke: #9CB9CF; }
 .canvas-hint {
   position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 16px; max-width: calc(100% - 280px);

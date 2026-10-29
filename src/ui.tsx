@@ -53,12 +53,9 @@ export function Popover({ trigger, children, label, placement = 'bottom' }: { tr
   useEffect(() => {
     if (!open) return;
     const close = (e: PointerEvent) => ref.current && !ref.current.contains(e.target as Node) && setPos(null);
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setPos(null);
     window.addEventListener('pointerdown', close);
-    window.addEventListener('keydown', esc);
     return () => {
       window.removeEventListener('pointerdown', close);
-      window.removeEventListener('keydown', esc);
     };
   }, [open]);
   const toggle = () => {
@@ -67,7 +64,14 @@ export function Popover({ trigger, children, label, placement = 'bottom' }: { tr
     setPos(placement === 'top' ? { left: r.left, bottom: window.innerHeight - r.top + 8 } : { left: r.left, top: r.bottom + 6 });
   };
   return (
-    <div className="popover-anchor" ref={ref}>
+    <div className="popover-anchor" ref={ref} onKeyDown={(e) => {
+      if (open && e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setPos(null);
+        btn.current?.focus();
+      }
+    }}>
       <button ref={btn} className="bare" onClick={toggle} aria-label={label} aria-expanded={open} title={label}>
         {trigger}
       </button>

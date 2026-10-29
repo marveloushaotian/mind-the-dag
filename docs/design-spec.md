@@ -8,11 +8,19 @@ All values are machine-readable in [`design/tokens.json`](../design/tokens.json)
 
 ## 1. Geometry
 
-- Lines run only at 0°, 45° or 90°. Every bend is an arc. **R45 = 40** and **R90 = 32**, both measured at the centreline.
+- Lines run only at 0°, 45° or 90°. Every bend is an arc. **R45 = 40** and **R90 = 32**, measured on the connection's original line.
 - Line width is **W = 10**. Lines in a bundle sit **12 apart** (W + 2) and turn on concentric arcs, so they never cross inside the bundle.
 - To move from one lane to the next, a line makes an S-curve over 64 px.
-- Joins are round and caps are butt.
+- Joins are round. Solid lines have butt caps; dashed and dotted lines have round caps.
+- At W = 10, dashed lines use a `24 20` dash/gap rhythm. Dotted lines use `0 22`
+  with round caps, producing separate circular marks. Swatches scale these
+  lengths with weight, and the canvas, legend and exports share these rules.
 - Through a 90° turn, a bundle stays concentric: each station's lane order is set so the turn never crosses lines. On a return leg (a serpentine), the order is mirrored, which is what a concentric turn produces.
+- A station's position anchors its first connected line. Additional lanes extend
+  the marker instead of re-centring the original line. Physical approaches decide
+  which side each lane occupies; vertical/return runs follow their lane
+  orientation. A joining/leaving lane or
+  an inner lane too wide for an existing corner takes its own rounded route.
 
 ## 2. Stations
 
@@ -25,14 +33,23 @@ Every station has a 3 px outline, ink on white (the surface colour).
 | Merge | **solid ink** rounded square, 22 wide, r 5 |
 | Optional step | circle with a dashed outline (`4.6 2.47`) and a muted label |
 | Inactive | circle outlined in `#B8BEC4`; its line at 30 % opacity |
-| Branch point (where lines split or join without a step) | no marker; the editor shows a small dot so it can be picked |
+| Existing routing point (legacy files) | no marker; the editor shows a small dot so it can be picked; not offered for new placements |
 
-The merge is solid so that it never looks like a shared capsule. A start or stop with connections on both sides is drawn as an ordinary step.
+The merge is solid so that it never looks like a shared capsule. Start and Stop
+are manual roles and retain their glyphs even with connections on both sides.
+New maps express branching by connecting several paths to an ordinary station.
+Entering the Station tool defaults to Step. Placement order and graph endpoints
+never assign terminal roles. Marker outlines, selection, snapping, labels and
+files share the same footprint as a capsule extends away from its anchor.
 
 ## 3. Termini and files
 
 - **Start flag**: a rounded pentagon in ink. The line starts underneath it, and the flag points at the side its line is on, whichever way the line was drawn.
 - **Stop bar**: 6 wide, r 2, on the open side of the line end.
+- Newly placed Start/Stop stations enable one FASTA badge. Type changes apply the
+  same default; existing configured formats are preserved between terminal roles.
+  Returning to an intermediate role disables the badge. Intermediate placements
+  default to no badge, and existing files are not rewritten on load.
 - The flag and the bar have the **same height**: they extend 6 px past the outer lines of the bundle.
 - **File icons** are 32 × 40 with r 3, a solid folded corner and a 2.5 px outline. Stacks offset each copy by 6 towards the **upper right**, up to 3 copies.
 - Any station except a branch point can carry a file icon:
@@ -92,7 +109,17 @@ The merge is solid so that it never looks like a shared capsule. A start or stop
 - Avoid crossings; where two connections must cross, cross away from bends and stations.
 - The connection carrying **more lines stays on top**; on a tie, the horizontal or vertical one; then the later one. The one underneath breaks with a **4 px gap** on each side of the top bundle (a bridge). The gap is cut out, not painted, so it stays transparent in exports.
 - Connections that share a station never count as crossing.
-- The order of lines within a bundle is fixed once for the whole map. A line that branches off therefore already sits on the side it leaves from.
+- Distinct branches are ordered by their physical approach to the station,
+  measured across its flow axis. A higher approach takes a higher lane on a
+  horizontal station; vertical stations use the corresponding left/right order.
+  Connection creation time and legend order do not override that geometry.
+- A shared run carries the pair's relative order to its other end, including
+  through turns. Separate junctions can order the same colours differently when
+  those colours do not share a run between them.
+- Physically indistinguishable lanes retain their last resolved relative order.
+  Before an order exists, the Lines list breaks ties. If opposing branch layouts
+  conflict, the stronger angular separation wins deterministically; some graphs
+  necessarily retain crossings.
 
 ## 9. Station rhythm
 
@@ -102,7 +129,12 @@ The merge is solid so that it never looks like a shared capsule. A start or stop
 
 ## 10. Optional and planned
 
-- A **planned** line is drawn as a cased line: two 3 px walls in the line colour with the surface colour in between.
+- **Hollow** is a direct stroke style: two 3 px walls, a transparent 4 px channel,
+  and rounded closed ends within the same 10 px footprint as Solid. It shares
+  the existing concentric routing, including at bends and inside bundles.
+- Legacy **planned** lines keep their cased appearance. The separate Planned
+  control is replaced by the Hollow style choice; explicitly choosing a style
+  clears the old flag.
 - Graphite already uses dashes to tell lines apart, so dashes cannot also mean "planned".
 - A planned line inside a bundle keeps its lane.
 - **Optional** steps: see the Stations table in section 2.
@@ -114,7 +146,8 @@ The merge is solid so that it never looks like a shared capsule. A start or stop
   - version · date · engine in 400 · 12;
   - an optional 32 px logo, aligned right.
 - The title block sits above the map and the legend below it, both left-aligned, until either is moved. As soon as stations or sections are moved or resized, both stay where they are.
-- **Legend**: the lines first, in bundle order from top to bottom (the same order as on the map), then a shape key: step, shared, merge, start, stop, planned.
+- **Legend**: the lines first, in the order of the Lines list, then a shape key:
+  step, shared, merge, start, stop, planned. Local physical lane order may differ.
   - The legend has no frame.
   - The line key can wrap into 2–4 columns (column-major), with the shape key in the columns after it, so a wide map keeps a short legend.
   - It goes in the largest empty corner, at least 32 px from any section.
@@ -148,6 +181,20 @@ The merge is solid so that it never looks like a shared capsule. A start or stop
 - Each palette is listed in the order its colours are assigned.
 - A map uses at most 7 line colours.
 - The CVD figures are the smallest pairwise colour difference (ΔE in CAM02-UCS) found under normal vision and under full-severity simulation of deuteranomaly, protanomaly and tritanomaly.
+
+**Nordic** (new-map default): five primary colours with sea and ink extensions.
+Canvas and section-fill contrast is at least 3:1 in both themes; this is not a
+claim that colour-vision simulation or print review has been completed.
+
+| Name | Light | Dark |
+|---|---|---|
+| Pine | `#3F7D6D` | `#70B7A2` |
+| Mist blue | `#4D6F9E` | `#86A8D6` |
+| Ochre gold | `#B47D30` | `#DDB06A` |
+| Heather | `#88618D` | `#BD95C5` |
+| Terracotta | `#AF624C` | `#DB947D` |
+| Sea | `#1C7A90` | `#78BDCE` |
+| Nordic ink | `#424D5C` | `#B6C2D0` |
 
 **Forest**: nf-core green leads, deep blue and amber follow, ink comes last. Light ≥ 11 ΔE · dark ≥ 10 ΔE.
 
@@ -200,7 +247,7 @@ Tints: `#F1F3EC` `#EFF3F7` `#F6F1E3` `#F7EEE9`
 ## Hard rules
 
 1. No sharp corners: every bend is an arc, with R45 = 40 and R90 = 32 at the centreline.
-2. Bundled lines sit 12 apart, turn on concentric arcs and keep one order across the whole map.
+2. Bundled lines sit 12 apart and carry physical branch order through their shared runs and concentric turns.
 3. One outline width for each kind of element: 3 px for stations, 2.5 px for icons.
 4. Circle = step, capsule = shared step, solid rounded square = merge, no marker = branch point.
 5. The start flag and the stop bar are the same height and orient themselves to their line; file icons sit on the open side, 6 px clear, stacked up-right.
@@ -210,7 +257,7 @@ Tints: `#F1F3EC` `#EFF3F7` `#F6F1E3` `#F7EEE9`
 9. Sections are tinted, never outlined, with at most 4 tints per map.
 10. Light grey `#B8BEC4` means inactive and is never used for a line.
 11. At most 7 line colours, assigned in palette order; planned = cased line, optional = dashed outline.
-12. The legend lists lines in bundle order, then the shape key, with no frame.
+12. The legend follows the Lines list, then the shape key, with no frame.
 13. Exports have a transparent background; dark mode comes from its own tokens.
 14. Inter only, everywhere; PDF exports embed it.
 15. Journal export uses 1 px = 0.5 pt, so all text is 5–7 pt; the editor warns when a map is too wide for its column.

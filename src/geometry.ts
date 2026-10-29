@@ -95,6 +95,19 @@ export interface RoundOpts {
   r90: number;
 }
 
+/** Whether an offset leaves room for a rounded inner corner on the fixed route. */
+export function offsetFitsCorners(points: Pt[], o: number, opts: RoundOpts, minRadius = 8): boolean {
+  for (let i = 1; i < points.length - 1; i++) {
+    const u = norm(sub(points[i], points[i - 1]));
+    const v = norm(sub(points[i + 1], points[i]));
+    const cross = u.x * v.y - u.y * v.x;
+    if (Math.abs(cross) < EPS) continue;
+    const radius = u.x * v.x + u.y * v.y < 0.5 ? opts.r90 : opts.r45;
+    if (radius + Math.sign(cross) * o < minRadius) return false;
+  }
+  return true;
+}
+
 /**
  * SVG path for one line following centreline `points`, displaced `o` px to
  * the left of travel. Corner radii are measured on the centreline and
@@ -102,9 +115,15 @@ export interface RoundOpts {
  * Radii shrink only when a segment is too short to hold the arc.
  */
 export function roundedPath(points: Pt[], o: number, opts: RoundOpts): string {
+  return roundedRail(points, o, opts);
+}
+
+/** Clamp corners once on the lane, then offset its walls around those same arcs. */
+function roundedRail(points: Pt[], o: number, opts: RoundOpts, rail = 0): string {
   if (points.length < 2) return '';
-  const pts = offsetPolyline(points, o);
-  const segLen = pts.slice(1).map((p, i) => len(sub(p, pts[i])));
+  const lane = offsetPolyline(points, o);
+  const pts = rail === 0 ? lane : offsetPolyline(points, o + rail);
+  const segLen = lane.slice(1).map((p, i) => len(sub(p, lane[i])));
   const d: string[] = [`M ${f(pts[0].x)} ${f(pts[0].y)}`];
   for (let i = 1; i < pts.length - 1; i++) {
     const u = norm(sub(points[i], points[i - 1]));
@@ -126,6 +145,7 @@ export function roundedPath(points: Pt[], o: number, opts: RoundOpts): string {
     const after = i === pts.length - 2 ? segLen[i] : segLen[i] / 2;
     const tMax = Math.min(before, after);
     if (r * tan > tMax) r = tMax / tan;
+    r += Math.sign(cross) * rail;
     if (r < 0.5) {
       d.push(`L ${f(pts[i].x)} ${f(pts[i].y)}`);
       continue;
@@ -140,6 +160,26 @@ export function roundedPath(points: Pt[], o: number, opts: RoundOpts): string {
   const last = pts[pts.length - 1];
   d.push(`L ${f(last.x)} ${f(last.y)}`);
   return d.join(' ');
+}
+
+/** Two concentric walls with round end caps; the middle remains transparent. */
+export function hollowPath(points: Pt[], offset: number, opts: RoundOpts, width: number, wall: number): string {
+  points = simplify(points);
+  if (points.length < 2) return '';
+  const radius = (width - wall) / 2;
+  const leftWall = offsetPolyline(points, offset + radius);
+  const rightWall = offsetPolyline(points, offset - radius);
+  // Reverse travel on the return wall so both caps join one closed contour.
+  // Removing its initial move leaves a continuous stroke, without butt seams.
+  const right = roundedRail([...points].reverse(), -offset, opts, radius);
+  const cap = (to: Pt) => `A ${f(radius)} ${f(radius)} 0 0 1 ${f(to.x)} ${f(to.y)}`;
+  return [
+    roundedRail(points, offset, opts, radius),
+    cap(rightWall.at(-1)!),
+    right.slice(right.indexOf(' L ')).trimStart(),
+    cap(leftWall[0]),
+    'Z',
+  ].join(' ');
 }
 
 /** Left-of-travel offset that puts a line `r` px along the lane axis of a port. */

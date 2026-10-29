@@ -10,7 +10,7 @@ const make = (body: React.ReactNode) =>
     );
   };
 
-export const ISelect = make(<path {...P} d="M4 2.5 L4 14 L7.2 11 L9.4 15.6 L11.4 14.7 L9.3 10.2 L13.5 10 Z" />);
+export const ISelect = make(<path {...P} d="M5.5 8 V3.5 a1 1 0 0 1 2 0 V7 V2.5 a1 1 0 0 1 2 0 V7 V3.5 a1 1 0 0 1 2 0 V7 V5 a1 1 0 0 1 2 0 V10 c0 3-1.5 5-4.5 5 H8 c-1.2 0-2.1-.6-2.8-1.6 L2.7 9.7 a1.1 1.1 0 0 1 1.7-1.4 L5.5 9.5 Z" />);
 export const IStation = make(
   <>
     <path {...P} d="M1.5 9 H16.5" strokeWidth={3} />
@@ -28,6 +28,7 @@ export const ISection = make(<rect {...P} x={2.5} y={3.5} width={13} height={11}
 export const IUndo = make(<path {...P} d="M6.5 4 L3 7.5 L6.5 11 M3.5 7.5 H11 A4 4 0 0 1 11 15.5 H8" />);
 export const IRedo = make(<path {...P} d="M11.5 4 L15 7.5 L11.5 11 M14.5 7.5 H7 A4 4 0 0 0 7 15.5 H10" />);
 export const IPlus = make(<path {...P} d="M9 3.5 V14.5 M3.5 9 H14.5" />);
+export const IMore = make(<>{[4, 9, 14].map((x) => <circle key={x} cx={x} cy={9} r={1.3} fill="currentColor" />)}</>);
 export const IMinus = make(<path {...P} d="M3.5 9 H14.5" />);
 export const IChevron = make(<path {...P} d="M5 7 L9 11 L13 7" />);
 export const IFit = make(<path {...P} d="M3 7 V3 H7 M11 3 H15 V7 M15 11 V15 H11 M7 15 H3 V11" />);

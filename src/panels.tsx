@@ -1,30 +1,34 @@
-import { IClose, IConnect, IDown, IPlus, ISection, ISelect, ITrash, IUp } from './icons';
-import { pruneLines, uid, usedLines, type Doc, type LabelSide, type StationKind } from './model';
-import { lineStyle, paletteLines, PALETTE_IDS, tints, type ThemeId } from './tokens';
+import { IConnect, IDown, IMore, IPlus, ISection, ISelect, IStation, ITrash, IUp } from './icons';
+import { changeLinePattern, changeStationKind, defaultFileBadge, pruneLines, reverseEdge, uid, usedLines, type Doc, type LabelSide, type StationKind } from './model';
+import { hollowPath } from './geometry';
+import { linePaint, lineStyle, paletteLines, PALETTE_IDS, tints, tokens, type LinePattern, type ThemeId } from './tokens';
 import { Field, Popover, Seg, Toggle } from './ui';
 
 type Update = (fn: (d: Doc) => void, key?: string) => void;
-export type Tool = 'select' | 'line' | 'section';
+export type Tool = 'select' | 'station' | 'line' | 'section';
 
 export const TOOLS: { id: Tool; label: string; key: string; Icon: () => React.ReactElement }[] = [
   { id: 'select', label: 'Select', key: 'V', Icon: () => <ISelect /> },
-  { id: 'line', label: 'Line', key: 'L', Icon: () => <IConnect /> },
+  { id: 'station', label: 'Station', key: 'S', Icon: () => <IStation /> },
+  { id: 'line', label: 'Connect', key: 'L', Icon: () => <IConnect /> },
   { id: 'section', label: 'Section', key: 'R', Icon: () => <ISection /> },
 ];
 
-function Swatch({ doc, slot, theme, pattern, planned, size = 28 }: { doc: Doc; slot: number; theme: ThemeId; pattern?: 'dashed' | 'dotted'; planned?: boolean; size?: number }) {
-  const base = lineStyle(doc.palette, slot, theme);
-  const p = pattern ?? base.pattern;
-  const dash = p === 'dashed' ? '6 4' : p === 'dotted' ? '1 5' : undefined;
+export function Swatch({ doc, slot, theme, pattern, planned, size = 28 }: { doc: Doc; slot: number; theme: ThemeId; pattern?: LinePattern; planned?: boolean; size?: number }) {
+  const paint = linePaint(doc.palette, slot, theme, pattern, 4);
+  const stroke = { stroke: paint.color, strokeDasharray: paint.dash, strokeLinecap: paint.cap };
   return (
     <svg width={size} height="12" aria-hidden="true" className="swatch">
-      {planned ? (
+      {paint.pattern === 'hollow' ? (
+        <path d={hollowPath([{ x: 3, y: 6 }, { x: size - 3, y: 6 }], 0, { r45: 0, r90: 0 }, 4, tokens.planned.wall * 4 / tokens.line.width)}
+          fill="none" {...stroke} strokeWidth={tokens.planned.wall * 4 / tokens.line.width} />
+      ) : planned ? (
         <>
-          <path d={`M 1 3.5 H ${size - 1}`} stroke={base.color} strokeWidth={2} />
-          <path d={`M 1 8.5 H ${size - 1}`} stroke={base.color} strokeWidth={2} />
+          <path d={`M 3 3.5 H ${size - 3}`} {...stroke} strokeWidth={2} />
+          <path d={`M 3 8.5 H ${size - 3}`} {...stroke} strokeWidth={2} />
         </>
       ) : (
-        <path d={`M 1 6 H ${size - 1}`} stroke={base.color} strokeWidth={6} strokeDasharray={dash} strokeLinecap={p === 'dotted' ? 'round' : 'butt'} />
+        <path d={`M 3 6 H ${size - 3}`} {...stroke} strokeWidth={4} />
       )}
     </svg>
   );
@@ -93,44 +97,45 @@ export function LeftRail({
       </div>
       <ul className="lines">
         {doc.lines.map((l, i) => (
-          <li key={l.id} className={`${active === l.id ? 'active' : ''}${used.has(l.id) ? '' : ' unused'}`} onPointerDown={() => setActive(l.id)} title={used.has(l.id) ? undefined : 'Not drawn yet: pick it and click stations to draw it'}>
-            <Popover label="Line style" trigger={<Swatch doc={doc} slot={l.slot} theme={theme} pattern={l.pattern} planned={l.planned} />}>
-              <div className="slots">
+          <li key={l.id} className={`${active === l.id ? 'active' : ''}${used.has(l.id) ? '' : ' unused'}`}>
+            <button className="line-choice" onClick={() => setActive(l.id)} aria-pressed={active === l.id}
+              aria-label={`Use ${l.name || 'Untitled line'}`} title={`Use ${l.name || 'Untitled line'}`}>
+              <Swatch doc={doc} slot={l.slot} theme={theme} pattern={l.pattern} planned={l.planned} />
+              <span className="line-name">{l.name || 'Untitled line'}</span>
+              <span className="line-selected" aria-hidden="true">{active === l.id ? '✓' : ''}</span>
+            </button>
+            <Popover label={`Edit ${l.name || 'Untitled line'}`} trigger={<IMore />}>
+              <Field label="Line name">
+                <input value={l.name} onChange={(e) => update((d) => void (d.lines[i].name = e.target.value), `line-name-${l.id}`)} />
+              </Field>
+              <Field label="Colour" group>
+                <div className="slots">
                 {slots.map((s, k) => (
                   <button key={k} className={`slot${l.slot === k ? ' on' : ''}`} title={s.name} aria-label={s.name} onClick={() => update((d) => void (d.lines[i].slot = k))}>
                     <Swatch doc={doc} slot={k} theme={theme} size={22} />
                   </button>
                 ))}
-              </div>
+                </div>
+              </Field>
               <Seg
                 label="Pattern"
-                value={l.pattern ?? 'solid'}
-                onChange={(v) => update((d) => void (d.lines[i].pattern = v === 'solid' ? undefined : (v as 'dashed' | 'dotted')))}
+                value={l.planned ? 'hollow' : linePaint(doc.palette, l.slot, theme, l.pattern).pattern}
+                onChange={(v) => update((d) => changeLinePattern(d.lines[i], v))}
                 options={[
-                  ['solid', 'Solid'],
-                  ['dashed', 'Dashed'],
-                  ['dotted', 'Dotted'],
+                  ['solid', <span className="pattern-choice"><Swatch doc={doc} slot={l.slot} theme={theme} pattern="solid" size={44} /><span>Solid</span></span>],
+                  ['dashed', <span className="pattern-choice"><Swatch doc={doc} slot={l.slot} theme={theme} pattern="dashed" size={44} /><span>Dashed</span></span>],
+                  ['dotted', <span className="pattern-choice"><Swatch doc={doc} slot={l.slot} theme={theme} pattern="dotted" size={44} /><span>Dotted</span></span>],
+                  ['hollow', <span className="pattern-choice"><Swatch doc={doc} slot={l.slot} theme={theme} pattern="hollow" size={44} /><span>Hollow</span></span>],
                 ]}
               />
-              <Toggle label="Planned" checked={!!l.planned} onChange={(v) => update((d) => void (d.lines[i].planned = v))} />
+              <div className="line-order">
+                <button onClick={() => move(i, -1)} disabled={i === 0}><IUp size={14} /> Move up</button>
+                <button onClick={() => move(i, 1)} disabled={i === doc.lines.length - 1}><IDown size={14} /> Move down</button>
+              </div>
               <button className="danger" disabled={doc.lines.length === 1} onClick={() => removeLine(l.id)}>
                 <ITrash size={16} /> Delete line
               </button>
             </Popover>
-            <input className="bare-input" value={l.name} onChange={(e) => update((d) => void (d.lines[i].name = e.target.value), `line-name-${l.id}`)} aria-label="Line name" />
-            <span className="reorder">
-              {doc.lines.length > 1 && (
-                <button className="icon line-remove" onClick={() => removeLine(l.id)} aria-label={`Delete ${l.name || 'line'}`} title="Delete line">
-                  <IClose size={14} />
-                </button>
-              )}
-              <button className="icon" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up" title="Move up">
-                <IUp size={14} />
-              </button>
-              <button className="icon" onClick={() => move(i, 1)} disabled={i === doc.lines.length - 1} aria-label="Move down" title="Move down">
-                <IDown size={14} />
-              </button>
-            </span>
           </li>
         ))}
       </ul>
@@ -142,16 +147,17 @@ export function LeftRail({
 const KINDS: [StationKind, string, React.ReactElement][] = [
   ['step', 'Step', <circle cx={12} cy={12} r={5.5} fill="#fff" stroke="currentColor" strokeWidth={2.2} />],
   ['merge', 'Merge', <rect x={6} y={6} width={12} height={12} rx={3} fill="currentColor" />],
-  ['junction', 'Branch', <path d="M3 12 H12 M12 12 L20 6 M12 12 L20 18" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" />],
   ['start', 'Start', <path d="M6 6.5 H9.5 L15.5 12 L9.5 17.5 H6 Z" fill="currentColor" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" />],
   ['stop', 'Stop', <rect x={10.5} y={5} width={3.5} height={14} rx={1.2} fill="currentColor" />],
 ];
 
-function KindPicker({ value, onChange }: { value: StationKind; onChange: (k: StationKind) => void }) {
+function KindPicker({ value, onChange, label = 'Type' }: { value: StationKind; onChange: (k: StationKind) => void; label?: string }) {
   return (
-    <div className="kinds" role="radiogroup" aria-label="Type">
+    <>
+    {value === 'junction' && <p className="inspector-note">Routing point. Choose a station type below to replace it.</p>}
+    <div className="kinds" role="radiogroup" aria-label={label}>
       {KINDS.map(([k, label, glyph]) => (
-        <button key={k} className={value === k ? 'on' : ''} onClick={() => onChange(k)} role="radio" aria-checked={value === k} title={label}>
+        <button key={k} className={value === k ? 'on' : ''} onClick={() => { if (value !== k) onChange(k); }} role="radio" aria-checked={value === k} title={label}>
           <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
             {glyph}
           </svg>
@@ -159,6 +165,7 @@ function KindPicker({ value, onChange }: { value: StationKind; onChange: (k: Sta
         </button>
       ))}
     </div>
+    </>
   );
 }
 const SIDES: LabelSide[] = ['auto', 'above', 'below', 'left', 'right'];
@@ -170,6 +177,7 @@ export function Inspector({
   theme,
   setTheme,
   onDelete,
+  placement,
 }: {
   doc: Doc;
   update: Update;
@@ -177,8 +185,24 @@ export function Inspector({
   theme: ThemeId;
   setTheme: (t: ThemeId) => void;
   onDelete: () => void;
+  placement?: { kind: StationKind; setKind: (kind: StationKind) => void };
 }) {
-  const items = [...selected].filter((k) => !k.startsWith('legend') && !k.startsWith('title'));
+  const items = [...selected].filter((key) => {
+    if (key.startsWith('station:')) return doc.stations.some((s) => s.id === key.slice(8));
+    if (key.startsWith('edge:')) return doc.edges.some((e) => e.id === key.slice(5));
+    if (key.startsWith('section:')) return doc.sections.some((s) => s.id === key.slice(8));
+    return false;
+  });
+
+  if (placement) return (
+    <div className="stack placement-inspector">
+      <h3>Place station</h3>
+      <Field label="Type" group>
+        <KindPicker value={placement.kind} onChange={placement.setKind} />
+      </Field>
+      <p className="inspector-note">Click the canvas to place. Select an existing station to edit it here.</p>
+    </div>
+  );
 
   if (items.length === 0) {
     return (
@@ -257,6 +281,7 @@ export function Inspector({
         <h3>Station</h3>
         <Field label="Name">
           <textarea
+            aria-label="Station name"
             rows={Math.min(5, s.label.split('\n').length)}
             value={s.label}
             onChange={(e) => set((st) => void (st.label = e.target.value), 'label')}
@@ -270,13 +295,13 @@ export function Inspector({
           />
         </Field>
         <Field label="Type" group>
-          <KindPicker value={s.kind} onChange={(k) => set((st) => void (st.kind = k))} />
+          <KindPicker value={s.kind} onChange={(k) => set((st) => changeStationKind(st, k))} />
         </Field>
         <Field label="Direction" group>
           <Seg
             label="Direction"
             value={s.axis}
-            onChange={(v) => set((st) => void (st.axis = v))}
+            onChange={(v) => set((st) => { st.axis = v; delete st.laneSign; })}
             options={[
               ['h', 'Horizontal'],
               ['v', 'Vertical'],
@@ -298,7 +323,7 @@ export function Inspector({
         <Toggle label="Inactive" checked={!!s.inactive} onChange={(v) => set((st) => void (st.inactive = v))} />
         {s.kind !== 'junction' && (
           <>
-            <Toggle label="File icon" checked={!!s.file} onChange={(v) => set((st) => void (st.file = v ? { ext: 'fastq', count: 1 } : undefined))} />
+            <Toggle label="File icon" checked={!!s.file} onChange={(v) => set((st) => void (st.file = v ? defaultFileBadge() : undefined))} />
             {s.file && (
               <>
                 <div className="row">
@@ -371,9 +396,7 @@ export function Inspector({
         <button
           onClick={() =>
             update((d) => {
-              const ed = d.edges[i];
-              [ed.from, ed.to] = [ed.to, ed.from];
-              ed.bend = 1 - ed.bend;
+              reverseEdge(d.edges[i]);
             })
           }
         >

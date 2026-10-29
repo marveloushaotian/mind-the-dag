@@ -10,6 +10,15 @@ type DocVT = Document & { startViewTransition?: (cb: () => void | Promise<void>)
 
 export const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+/** Arc flags switch discretely; incompatible turns must fade rather than flip mid-morph. */
+export function pathTopology(d: string): string {
+  return [...d.matchAll(/([A-Za-z])([^A-Za-z]*)/g)].map(([, command, values]) => {
+    if (command.toUpperCase() !== 'A') return command;
+    const args = values.trim().split(/[\s,]+/);
+    return `${command}${args[3]}${args[4]}`;
+  }).join('');
+}
+
 /** The shared element name the opened map's thumbnail and the editor canvas both carry. */
 export const MORPH = 'map-morph';
 

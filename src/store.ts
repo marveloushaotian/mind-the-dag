@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Doc } from './model';
+import { preserveSurvivingPorts, type Doc } from './model';
 
 const LIMIT = 200;
 
@@ -44,6 +44,7 @@ export function useDocument(initial: () => Doc, onSave?: (d: Doc) => void) {
   const update = useCallback((fn: (d: Doc) => void, key?: string) => {
     const next = structuredClone(docRef.current);
     fn(next);
+    preserveSurvivingPorts(docRef.current, next);
     const now = Date.now();
     const same = key && lastKey.current && lastKey.current.key === key && now - lastKey.current.at < 1500;
     lastKey.current = key ? { key, at: now } : null;
@@ -54,13 +55,24 @@ export function useDocument(initial: () => Doc, onSave?: (d: Doc) => void) {
   }, []);
 
   const checkpoint = useCallback(() => {
+    const before = { doc: docRef.current, past: [...past.current], future: [...future.current], lastKey: lastKey.current };
     push(docRef.current);
     bump((n) => n + 1);
+    // Cancelling a gesture restores its history too, including an existing redo chain.
+    return () => {
+      docRef.current = before.doc;
+      past.current = before.past;
+      future.current = before.future;
+      lastKey.current = before.lastKey;
+      setDoc(before.doc);
+      bump((n) => n + 1);
+    };
   }, []);
 
   const preview = useCallback((fn: (d: Doc) => void) => {
     const next = structuredClone(docRef.current);
     fn(next);
+    preserveSurvivingPorts(docRef.current, next);
     docRef.current = next;
     setDoc(next);
   }, []);

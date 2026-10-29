@@ -29,8 +29,9 @@ palette, theme, legend and title block.
 
 | Key | Action |
 |---|---|
-| V · L · R | Select · Line · Section |
-| Click, click, click | With Line: place stations and join them with the highlighted line; click a station to continue from it; Esc ends the line |
+| V · S · L · R | Select · Station · Connect · Section |
+| Click with Station | Place an independent station of the selected type; keep clicking to lay out the map |
+| Click A, then B with Connect | Join existing stations with the highlighted line; preview only near another station; continue from B or press Esc to finish |
 | Double-click, Enter | Rename a station on the canvas |
 | Alt-drag a section | Move it together with the stations inside |
 | Drag the bend handle | Slide a selected connection's bend |
@@ -47,8 +48,17 @@ palette, theme, legend and title block.
 | ⌘/Ctrl O | Open a file |
 | ? | Show all shortcuts |
 
-The order of the lines on the left is their order in a bundle, top to bottom,
-across the whole map.
+Branches are ordered by their physical approaches; shared runs carry that order
+through turns. The Lines list controls the legend and breaks initial ties.
+
+Click anywhere on a line's swatch/name to select it; use its ellipsis to edit it.
+New maps start with the Nordic palette. Each line offers Solid, Dashed, Dotted
+and Hollow directly; Hollow keeps its centre transparent in every export.
+Station types live in the right inspector, both for placement and for editing.
+Start and Stop default to a FASTA file badge; intermediate stations default to
+no badge. Branching uses multiple connections on an ordinary station.
+Drag a single station onto another to preview a fusion, then release to merge;
+the destination keeps its type and the whole gesture can be undone once.
 
 ## Develop
 
@@ -66,6 +76,7 @@ Every push to `main` is tested, built and deployed to GitHub Pages by
 
 - [Design spec v0.3](docs/design-spec.md) — geometry, stations, labels, palettes, export rules
 - [Design tokens](design/tokens.json) — the same values in machine-readable form
+- [Interaction principles](docs/interaction-design.md) — control ownership, motion, fusion and design references
 
 ## Acknowledgement
 

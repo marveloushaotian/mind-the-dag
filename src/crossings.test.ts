@@ -23,8 +23,9 @@ describe('crossings', () => {
   });
   it('leaves a 4 px gap each side of the two-line bundle', () => {
     const ys = cs[0].poly.map((p) => p.y);
-    // bundle is 22 px wide (two lines, 12 apart, 10 wide) centred on y = 96 → gap from 81 to 111
-    expect(Math.min(...ys)).toBeCloseTo(81, 5);
-    expect(Math.max(...ys)).toBeCloseTo(111, 5);
+    // The original line stays at y=96; the second is at y=108. The gap
+    // surrounds their actual footprint (91..113), with 4 px clearance.
+    expect(Math.min(...ys)).toBeCloseTo(87, 5);
+    expect(Math.max(...ys)).toBeCloseTo(117, 5);
   });
 });

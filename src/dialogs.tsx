@@ -64,15 +64,17 @@ const GROUPS: [string, [string, string[]][]][] = [
     'Tools',
     [
       ['Select', ['V']],
-      ['Line', ['L']],
+      ['Station', ['S']],
+      ['Connect', ['L']],
       ['Section', ['R']],
     ],
   ],
   [
     'Drawing',
     [
-      ['Place a station, continue the line', ['Click']],
-      ['End the line', ['Esc']],
+      ['Place a station (Station tool)', ['Click']],
+      ['Connect stations (Connect tool)', ['Click A', 'Click B']],
+      ['Finish connecting / leave Station tool', ['Esc']],
       ['Rename a station', ['Double-click', '/', 'Enter']],
       ['Move a section with its stations', ['Alt', 'Drag']],
       ['Slide a bend along a connection', ['Drag the handle']],

@@ -1,7 +1,7 @@
 import { useId, type ReactNode } from 'react';
-import { laneToLeftOffset, roundedPath, routeCentre, type Pt } from './geometry';
-import { derive, laneOffset, lanePoint, PITCH, type Derived, type Doc, type Edge, type LabelSide, type Station } from './model';
-import { lineStyle, tints, tokens, type ThemeId } from './tokens';
+import { hollowPath, laneToLeftOffset, offsetFitsCorners, offsetPolyline, roundedPath, routeCentre, type Pt } from './geometry';
+import { derive, laneOffset, lanePoint, stationMarker, PITCH, type Derived, type Doc, type Edge, type LabelSide, type Line, type Station } from './model';
+import { linePaint, tints, tokens, type PaletteId, type ThemeId } from './tokens';
 
 /**
  * Pure SVG rendering of a Doc in the mind-the-dag style. Interactive editors
@@ -13,6 +13,8 @@ export interface RenderOptions {
   /** Export mode: no editor hints, halos only inside sections. */
   exporting?: boolean;
   selected?: ReadonlySet<string>;
+  /** Editor-only candidate; its geometry is identical to the committed connection. */
+  previewConnection?: { edgeId: string; lineId: string };
 }
 
 const W = tokens.line.width;
@@ -27,10 +29,6 @@ interface Theme {
   inactive: string;
 }
 
-function withPattern<T extends { pattern: string | null }>(st: T, override?: 'dashed' | 'dotted'): T {
-  return override ? { ...st, pattern: override } : st;
-}
-
 function themeColours(theme: ThemeId): Theme {
   const t = tokens.themes[theme];
   return { ink: t.ink, surface: t.surface, muted: t.muted, inactive: t.inactive };
@@ -38,8 +36,10 @@ function themeColours(theme: ThemeId): Theme {
 
 export interface EdgeGeometry {
   centre: Pt[];
-  /** `centre` is set when this line takes its own route (a lane shift along the connection). */
-  lines: { id: string; d: string; o: number; centre?: Pt[] }[];
+  /** Curved middle of the visible bundle, used for selection and hit testing. */
+  d: string;
+  /** Each lane references either the original route or its own joining/leaving route. */
+  lines: { id: string; d: string; o: number; centre: Pt[] }[];
   width: number;
   radii: { r45: number; r90: number };
 }
@@ -50,36 +50,43 @@ export function edgeGeometry(dv: Derived, e: Edge): EdgeGeometry | null {
   if (!A || !B) return null;
   const ls = e.lines.filter((l) => dv.lineOrder.has(l)).sort((a, b) => dv.lineOrder.get(a)! - dv.lineOrder.get(b)!);
   if (!ls.length) return null;
-  const k = ls.length;
-  const mean = (s: Station) => ls.reduce((acc, l) => acc + laneOffset(dv, s.id, l), 0) / k;
-  const PA = lanePoint(A, mean(A));
-  const PB = lanePoint(B, mean(B));
-  const centre = routeCentre(PA, A.axis, PB, B.axis, e.bend);
-  const half = ((k - 1) / 2) * PITCH;
-  const opts = { r45: Math.max(R45, half + 8), r90: Math.max(R90, half + 8) };
-  if (centre.length < 2) return { centre, lines: [], width: k * PITCH, radii: opts };
-  const mA = mean(A);
-  const mB = mean(B);
-  const relA = ls.map((l) => laneOffset(dv, A.id, l) - mA);
-  const relB = ls.map((l) => laneOffset(dv, B.id, l) - mB);
-  // Lines keep their actual lanes at both ends. When a line's lane relative to the bundle
-  // differs between the two stations (lines joining or leaving in between), each line
-  // takes its own route, which draws the lane shift as a short 45° step.
-  const shift = A.axis === B.axis && relA.some((r, i) => Math.abs(r - relB[i]) > 0.5);
-  const lines = ls.map((id, i) => {
-    if (shift) {
-      const own = routeCentre(lanePoint(A, laneOffset(dv, A.id, id)), A.axis, lanePoint(B, laneOffset(dv, B.id, id)), B.axis, e.bend);
-      return { id, d: roundedPath(own, 0, opts), o: 0, centre: own };
-    }
-    const o = laneToLeftOffset(centre, A.axis, relA[i]);
-    return { id, d: roundedPath(centre, o, opts), o };
+  // Edge.lines retains connection order. Route the original line first, so adding
+  // a parallel line cannot move its corners or change its radii.
+  const anchorId = e.lines.find((id) => dv.lineOrder.has(id))!;
+  const a0 = e.route?.from ?? laneOffset(dv, A.id, anchorId);
+  const b0 = e.route?.to ?? laneOffset(dv, B.id, anchorId);
+  const reference = routeCentre(lanePoint(A, a0), A.axis, lanePoint(B, b0), B.axis, e.bend);
+  const opts = { r45: R45, r90: R90 };
+  if (reference.length < 2) return { centre: reference, d: '', lines: [], width: W, radii: opts };
+  const close = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y) < 0.01;
+  const lines = ls.map((id) => {
+    const PA = lanePoint(A, laneOffset(dv, A.id, id));
+    const PB = lanePoint(B, laneOffset(dv, B.id, id));
+    const o = laneToLeftOffset(reference, A.axis, laneOffset(dv, A.id, id) - a0);
+    const parallel = offsetPolyline(reference, o);
+    // A joining/leaving lane may have different ports at the two ends. A very
+    // wide inner lane may also exhaust the original corner radius. Give only
+    // that lane its own rounded route; keep the established line unchanged.
+    const fits = close(parallel[0], PA) && close(parallel.at(-1)!, PB) && offsetFitsCorners(reference, o, opts);
+    const centre = fits ? reference : routeCentre(PA, A.axis, PB, B.axis, e.bend);
+    const offset = fits ? o : 0;
+    return { id, d: roundedPath(centre, offset, opts), o: offset, centre };
   });
-  return { centre, lines, width: k * PITCH, radii: opts };
+  const span = (s: Station) => {
+    const offsets = ls.map((id) => laneOffset(dv, s.id, id));
+    const min = Math.min(...offsets), max = Math.max(...offsets);
+    return { mid: (min + max) / 2, width: max - min + W };
+  };
+  const sa = span(A), sb = span(B);
+  const shared = lines.every((line) => line.centre === reference);
+  const mid = shared ? (Math.min(...lines.map((l) => l.o)) + Math.max(...lines.map((l) => l.o))) / 2 : 0;
+  const centre = shared ? offsetPolyline(reference, mid) : routeCentre(lanePoint(A, sa.mid), A.axis, lanePoint(B, sb.mid), B.axis, e.bend);
+  const d = shared ? roundedPath(reference, mid, opts) : roundedPath(centre, 0, opts);
+  return { centre, d, lines, width: Math.max(sa.width, sb.width), radii: opts };
 }
 
 /**
  * Which sides of a station (along its flow axis) its connections leave from.
- * A start or stop with connections on both sides is drawn as an ordinary step.
  */
 function lineSides(doc: Doc, dv: Derived, s: Station) {
   let neg = false;
@@ -98,8 +105,8 @@ function lineSides(doc: Doc, dv: Derived, s: Station) {
 const LABEL_LINE = 16;
 
 /** Where a station's label goes, and the box it roughly covers (Inter 600, 13 px). */
-function labelPlacement(s: Station, kind: Station['kind'], n: number, decided?: LabelSide) {
-  const ext = markerExtent(kind, n);
+function labelPlacement(s: Station, dv: Derived, decided?: LabelSide) {
+  const ext = stationMarker(dv, s);
   const h = s.axis === 'h';
   let side = decided ?? s.labelSide;
   if (side === 'auto') side = h ? 'above' : 'right';
@@ -108,45 +115,23 @@ function labelPlacement(s: Station, kind: Station['kind'], n: number, decided?: 
   // Multi-line labels: the first line is the name (600 · 13), further lines are details (400 · 12).
   const rows = s.label.split('\n');
   const extra = (rows.length - 1) * LABEL_LINE;
-  let x = s.x;
-  let y = s.y;
+  let x = ext.x;
+  let y = ext.y;
   let anchor: 'start' | 'middle' | 'end' = 'middle';
-  if (side === 'above') y = s.y - across - 10 - extra;
-  else if (side === 'below') y = s.y + across + 10 + 9.5;
+  if (side === 'above') y = ext.y - across - 10 - extra;
+  else if (side === 'below') y = ext.y + across + 10 + 9.5;
   else if (side === 'right') {
-    x = s.x + along + 10;
-    y = s.y + 4.5 - extra / 2;
+    x = ext.x + along + 10;
+    y = ext.y + 4.5 - extra / 2;
     anchor = 'start';
   } else {
-    x = s.x - along - 10;
-    y = s.y + 4.5 - extra / 2;
+    x = ext.x - along - 10;
+    y = ext.y + 4.5 - extra / 2;
     anchor = 'end';
   }
   const w = Math.max(...rows.map((r, i) => r.length * (i === 0 ? 7.6 : 6.6)));
   const x0 = anchor === 'middle' ? x - w / 2 : anchor === 'start' ? x : x - w;
   return { x, y, anchor, box: { x0, y0: y - 11, x1: x0 + w, y1: y + extra + 3 } };
-}
-
-/** The glyph a station is drawn with: termini in the middle of a line become steps. */
-function drawnKind(doc: Doc, dv: Derived, s: Station): Station['kind'] {
-  if ((s.kind === 'start' || s.kind === 'stop') && lineSides(doc, dv, s).middle) return 'step';
-  return s.kind;
-}
-
-/** Extent of a station marker across the flow (half-length) and along it (half-width). */
-function markerExtent(kind: Station['kind'], n: number) {
-  const k = Math.max(n, 1);
-  switch (kind) {
-    case 'merge':
-      return { across: (22 + PITCH * (k - 1)) / 2 + 1.5, along: 11 + 1.5 };
-    case 'junction':
-      return { across: (W + PITCH * (k - 1)) / 2, along: 0 };
-    case 'start':
-    case 'stop':
-      return { across: (W + PITCH * (k - 1)) / 2 + 6, along: 6 };
-    default:
-      return { across: (18 + PITCH * (k - 1)) / 2 + 1.5, along: 9 + 1.5 };
-  }
 }
 
 function sectionAt(doc: Doc, p: Pt) {
@@ -224,10 +209,12 @@ export interface Bounds {
 export function contentBounds(doc: Doc): Bounds | null {
   const xs: number[] = [];
   const ys: number[] = [];
+  const dv = derive(doc);
   for (const s of doc.stations) {
     const pad = s.file ? 72 : 40;
-    xs.push(s.x - pad, s.x + pad);
-    ys.push(s.y - 40, s.y + 44);
+    const m = stationMarker(dv, s);
+    xs.push(m.x0 - pad, m.x1 + pad);
+    ys.push(m.y0 - 40, m.y1 + 44);
   }
   for (const s of doc.sections) {
     xs.push(s.x, s.x + s.w);
@@ -239,6 +226,8 @@ export function contentBounds(doc: Doc): Bounds | null {
 
 
 const LEGEND_ROW = 36;
+const LEGEND_LINE_WIDTH = tokens.legend.lineSampleWidth;
+const LEGEND_LABEL_OFFSET = LEGEND_LINE_WIDTH + 10;
 
 /** Where each legend entry goes: line key wrapped into columns, then the shape key. */
 export function legendLayout(doc: Doc, lineNames: string[], kinds: string[]) {
@@ -251,7 +240,7 @@ export function legendLayout(doc: Doc, lineNames: string[], kinds: string[]) {
     chunk.forEach((_, i) => lines.push({ dx, dy: i * LEGEND_ROW }));
     const longest = Math.max(0, ...chunk.map((n) => n.length));
     // Inter 12 px is about 6.6 px per character.
-    dx += Math.max(cols > 1 ? 0 : 212, 42 + Math.ceil((longest * 6.6) / 8) * 8 + 40);
+    dx += Math.max(cols > 1 ? 0 : 212, LEGEND_LABEL_OFFSET + Math.ceil((longest * 6.6) / 8) * 8 + 40);
   }
   const keyRows = cols > 1 ? Math.max(perCol, 1) : Math.max(kinds.length, 1);
   const shapes: { dx: number; dy: number }[] = [];
@@ -317,7 +306,7 @@ interface Crossing {
 export function findCrossings(doc: Doc, geoms: Map<string, EdgeGeometry>): Crossing[] {
   const out: Crossing[] = [];
   const list = doc.edges.filter((e) => geoms.has(e.id));
-  const drawnWidth = (g: EdgeGeometry) => (g.lines.length - 1) * PITCH + W;
+  const drawnWidth = (g: EdgeGeometry) => g.width;
   for (let i = 0; i < list.length; i++) {
     for (let j = i + 1; j < list.length; j++) {
       const A = list[i];
@@ -363,7 +352,33 @@ export function findCrossings(doc: Doc, geoms: Map<string, EdgeGeometry>): Cross
   return out;
 }
 
-export function MetroMap({ doc, theme = 'light', exporting = false, selected }: { doc: Doc } & RenderOptions) {
+/** Shared line styling for the map and target previews, including planned lines. */
+export function LineStroke({ geometry, path, line, palette, theme, preview = false }: {
+  geometry: EdgeGeometry;
+  path: EdgeGeometry['lines'][number];
+  line: Line;
+  palette: PaletteId;
+  theme: ThemeId;
+  preview?: boolean;
+}) {
+  const paint = linePaint(palette, line.slot, theme, line.pattern);
+  const stroke = { stroke: paint.color, strokeDasharray: paint.dash, strokeLinecap: paint.cap };
+  return (
+    <g opacity={preview ? 0.55 : undefined} data-line-stroke={line.id} data-line-pattern={paint.pattern} data-connection-preview={preview ? '' : undefined}>
+      {paint.pattern === 'hollow' ? (
+        <path d={hollowPath(path.centre, path.o, geometry.radii, W, tokens.planned.wall)}
+          fill="none" {...stroke} strokeWidth={tokens.planned.wall} strokeLinejoin="round" />
+      ) : line.planned ? [-1, 1].map((side) => (
+        <path key={side} d={roundedPath(path.centre, path.o + side * (W - tokens.planned.wall) / 2, geometry.radii)}
+          fill="none" {...stroke} strokeWidth={tokens.planned.wall} strokeLinejoin="round" />
+      )) : (
+        <path d={path.d} fill="none" {...stroke} strokeWidth={W} strokeLinejoin="round" />
+      )}
+    </g>
+  );
+}
+
+export function MetroMap({ doc, theme = 'light', exporting = false, selected, previewConnection }: { doc: Doc } & RenderOptions) {
   const th = themeColours(theme);
   const dv = derive(doc);
   const tintList = tints(doc.palette, theme);
@@ -388,10 +403,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
   ));
 
   const obstacles: { id: string; box: Box }[] = doc.stations.map((s) => {
-    const n = dv.stationLines.get(s.id)?.length ?? 0;
-    const e = markerExtent(drawnKind(doc, dv, s), n);
-    const [ax, ay] = s.axis === 'h' ? [e.along, e.across] : [e.across, e.along];
-    return { id: s.id, box: { x0: s.x - ax, y0: s.y - ay, x1: s.x + ax, y1: s.y + ay } };
+    return { id: s.id, box: stationMarker(dv, s) };
   });
   for (const sec of doc.sections)
     obstacles.push({ id: `sec-${sec.id}`, box: { x0: sec.x + 12, y0: sec.y + 12, x1: sec.x + 44 + sec.name.length * 8.4, y1: sec.y + 40 } });
@@ -425,7 +437,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
       }
     }
     if (!exporting) {
-      const dCentre = roundedPath(g.centre, 0, { r45: R45, r90: R90 });
+      const dCentre = g.d;
       hitEls.push(
         <path key={`hit-${e.id}`} data-sel={`edge:${e.id}`} d={dCentre} fill="none" stroke="transparent" strokeWidth={g.width + 8} />,
       );
@@ -437,38 +449,10 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
     }
     for (const ln of g.lines) {
       const line = doc.lines.find((l) => l.id === ln.id)!;
-      const st = withPattern(lineStyle(doc.palette, line.slot, theme), line.pattern);
-      const dash = st.pattern === 'dashed' ? tokens.line.patterns.dashed.join(' ') : st.pattern === 'dotted' ? tokens.line.patterns.dotted.dash.join(' ') : undefined;
-      if (line.planned) {
-        const half = (W - tokens.planned.wall) / 2;
-        const ctr = ln.centre ?? g.centre;
-        const base = ln.o;
-        for (const s of [-1, 1]) {
-          ownEls.push(
-            <path
-              key={`${e.id}-${ln.id}-w${s}`}
-              d={roundedPath(ctr, base + s * half, g.radii)}
-              fill="none"
-              stroke={st.color}
-              strokeWidth={tokens.planned.wall}
-              strokeLinejoin="round"
-            />,
-          );
-        }
-      } else {
-        ownEls.push(
-          <path
-            key={`${e.id}-${ln.id}`}
-            d={ln.d}
-            fill="none"
-            stroke={st.color}
-            strokeWidth={W}
-            strokeLinejoin="round"
-            strokeDasharray={dash}
-            strokeLinecap={st.pattern === 'dotted' ? 'round' : 'butt'}
-          />,
-        );
-      }
+      ownEls.push(
+        <LineStroke key={`${e.id}-${ln.id}`} geometry={g} path={ln} line={line} palette={doc.palette} theme={theme}
+          preview={!exporting && previewConnection?.edgeId === e.id && previewConnection.lineId === ln.id} />,
+      );
     }
     const cut = gaps.get(e.id);
     if (cut) {
@@ -480,11 +464,11 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
         </clipPath>,
       );
       edgeEls.push(
-        <g key={`g-${e.id}`} clipPath={`url(#${id})`}>
+        <g key={`g-${e.id}`} data-edge={!exporting ? e.id : undefined} clipPath={`url(#${id})`}>
           {ownEls}
         </g>,
       );
-    } else edgeEls.push(<g key={`g-${e.id}`}>{ownEls}</g>);
+    } else edgeEls.push(<g key={`g-${e.id}`} data-edge={!exporting ? e.id : undefined}>{ownEls}</g>);
   }
 
 
@@ -499,14 +483,12 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
       const B = dv.byId.get(e.to);
       if (g && A && B && A.axis === B.axis && g.centre.length === 2) parent.set(find(A.id), find(B.id));
     }
-    const kindOf = (s: Station) => drawnKind(doc, dv, s);
-    const nOf = (s: Station) => dv.stationLines.get(s.id)?.length ?? 0;
     // Text over text is unreadable, so another label weighs most; a line passing behind (with its halo) least.
     const weight = (id: string) => (id.startsWith('label-') ? 20 : id.startsWith('edge-') ? 1 : 5);
     const hits = (sid: string, box: Box) => obstacles.reduce((acc, ob) => (ob.id !== sid && overlaps(box, ob.box, 2) ? acc + weight(ob.id) : acc), 0);
     // Labels with a fixed side go down first.
     for (const s of doc.stations)
-      if (s.label && s.labelSide !== 'auto') obstacles.push({ id: `label-${s.id}`, box: labelPlacement(s, kindOf(s), nOf(s)).box });
+      if (s.label && s.labelSide !== 'auto') obstacles.push({ id: `label-${s.id}`, box: labelPlacement(s, dv).box });
     const groups = new Map<string, Station[]>();
     for (const s of doc.stations) {
       if (!s.label || s.labelSide !== 'auto') continue;
@@ -519,7 +501,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
       let best = sides[0];
       let bestScore = Infinity;
       for (const side of sides) {
-        const score = members.reduce((acc, s) => acc + hits(s.id, labelPlacement(s, kindOf(s), nOf(s), side).box), 0);
+        const score = members.reduce((acc, s) => acc + hits(s.id, labelPlacement(s, dv, side).box), 0);
         if (score < bestScore) {
           best = side;
           bestScore = score;
@@ -528,7 +510,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
       }
       for (const s of members) {
         sideOf.set(s.id, best);
-        obstacles.push({ id: `label-${s.id}`, box: labelPlacement(s, kindOf(s), nOf(s), best).box });
+        obstacles.push({ id: `label-${s.id}`, box: labelPlacement(s, dv, best).box });
       }
     }
   }
@@ -547,34 +529,31 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
     const h = s.axis === 'h';
     const key = `st-${s.id}`;
     let glyph: ReactNode = null;
-    const kind = drawnKind(doc, dv, s);
+    const kind = s.kind;
     const sides = lineSides(doc, dv, s);
-    const ext = markerExtent(kind, n);
+    const ext = stationMarker(dv, s);
+    const { x: cx, y: cy } = ext;
     if (kind === 'step') {
-      if (k === 1) {
-        glyph = <circle cx={s.x} cy={s.y} r={9} fill={th.surface} stroke={stroke} strokeWidth={3} strokeDasharray={dash} />;
-      } else {
-        const L = 18 + PITCH * (k - 1);
-        glyph = (
-          <rect
-            x={h ? s.x - 9 : s.x - L / 2}
-            y={h ? s.y - L / 2 : s.y - 9}
-            width={h ? 18 : L}
-            height={h ? L : 18}
-            rx={9}
-            fill={th.surface}
-            stroke={stroke}
-            strokeWidth={3}
-            strokeDasharray={dash}
-          />
-        );
-      }
+      const L = 18 + PITCH * (k - 1);
+      glyph = (
+        <rect
+          x={h ? cx - 9 : cx - L / 2}
+          y={h ? cy - L / 2 : cy - 9}
+          width={h ? 18 : L}
+          height={h ? L : 18}
+          rx={9}
+          fill={th.surface}
+          stroke={stroke}
+          strokeWidth={3}
+          strokeDasharray={dash}
+        />
+      );
     } else if (kind === 'merge') {
       const L = 22 + PITCH * (k - 1);
       glyph = (
         <rect
-          x={h ? s.x - 11 : s.x - L / 2}
-          y={h ? s.y - L / 2 : s.y - 11}
+          x={h ? cx - 11 : cx - L / 2}
+          y={h ? cy - L / 2 : cy - 11}
           width={h ? 22 : L}
           height={h ? L : 22}
           rx={5}
@@ -599,15 +578,15 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
           [3, a],
           [-3, a],
         ];
-        const toXY = ([u, v]: [number, number]) => (h ? [s.x + dir * u, s.y + v] : [s.x + v, s.y + dir * u]);
+        const toXY = ([u, v]: [number, number]) => (h ? [cx + dir * u, cy + v] : [cx + v, cy + dir * u]);
         const d = 'M ' + pts.map((q) => toXY(q).join(' ')).join(' L ') + ' Z';
         glyph = <path d={d} fill={stroke} stroke={stroke} strokeWidth={3} strokeLinejoin="round" />;
       } else if (kind === 'stop') {
         const x0 = dir > 0 ? 0 : -6;
         glyph = h ? (
-          <rect x={s.x + x0} y={s.y - H / 2} width={6} height={H} rx={2} fill={stroke} />
+          <rect x={cx + x0} y={cy - H / 2} width={6} height={H} rx={2} fill={stroke} />
         ) : (
-          <rect x={s.x - H / 2} y={s.y + x0} width={H} height={6} rx={2} fill={stroke} />
+          <rect x={cx - H / 2} y={cy + x0} width={H} height={6} rx={2} fill={stroke} />
         );
       }
     }
@@ -648,8 +627,8 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
             cu = 0;
             cv = side * (half + gap + nearV);
           }
-          const cx = h ? s.x + cu : s.x + cv;
-          const cy = h ? s.y + cv : s.y + cu;
+          const cx = h ? ext.x + cu : ext.x + cv;
+          const cy = h ? ext.y + cv : ext.y + cu;
           const sx = h ? su : sv;
           const sy = h ? sv : su;
           const f = fileFootprint(count, sx, sy);
@@ -696,46 +675,53 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
           const top = pick.caption && pick.caption.y < pick.cy ? pick.box.y0 : pick.cy + fileFootprint(count, 1, -1).y0;
           labelAt.set(s.id, { x: pick.cx, y: top - 8, anchor: 'middle' });
         }
-        fileEls.push(fileIcon(pick.cx, pick.cy, s.file.ext, count, pick.sx, pick.sy, th, `file-${s.id}`));
-        if (pick.caption)
-          fileEls.push(
-            <text key={`cap-${s.id}`} x={pick.caption.x} y={pick.caption.y} textAnchor={pick.caption.anchor} fontSize={12} fill={th.muted}>
+        fileEls.push(
+          <g key={`file-${s.id}`} data-station-file={s.id} data-layout-x={pick.cx} data-layout-y={pick.cy}>
+            {fileIcon(pick.cx, pick.cy, s.file.ext, count, pick.sx, pick.sy, th, `file-${s.id}`)}
+            {pick.caption && <text x={pick.caption.x} y={pick.caption.y} textAnchor={pick.caption.anchor} fontSize={12} fill={th.muted}>
               {s.file.caption}
-            </text>,
-          );
+            </text>}
+          </g>,
+        );
       }
     }
     if (kind === 'junction' && !exporting) {
       // Branch points have no marker on the map; the editor shows a small dot so they can be picked.
-      glyph = <circle cx={s.x} cy={s.y} r={3.5} fill={th.surface} stroke={th.muted} strokeWidth={1.5} />;
+      glyph = <circle cx={cx} cy={cy} r={3.5} fill={th.surface} stroke={th.muted} strokeWidth={1.5} />;
     }
 
     stationEls.push(
-      <g key={key} data-sel={`station:${s.id}`}>
+      <g key={key} data-sel={`station:${s.id}`} data-station-kind={kind}>
         {!exporting && (
           <rect
-            x={s.x - (h ? ext.along : ext.across) - 6}
-            y={s.y - (h ? ext.across : ext.along) - 6}
+            x={cx - (h ? ext.along : ext.across) - 6}
+            y={cy - (h ? ext.across : ext.along) - 6}
             width={2 * (h ? ext.along : ext.across) + 12}
             height={2 * (h ? ext.across : ext.along) + 12}
             fill="transparent"
           />
         )}
         {sel && !exporting && (() => {
-          // One selection frame whose size depends only on how many lines pass, not on the type.
-          const along = 16;
+          // Enclose the complete marker, including a wide terminal flag.
+          const along = Math.max(16, ext.along + 5);
           const across = 16 + (PITCH / 2) * (k - 1);
           const [hx, hy] = h ? [along, across] : [across, along];
-          return <rect x={s.x - hx} y={s.y - hy} width={2 * hx} height={2 * hy} rx={10} fill="none" stroke={ACCENT} strokeWidth={1.5} />;
+          return <rect x={cx - hx} y={cy - hy} width={2 * hx} height={2 * hy} rx={10} fill="none" stroke={ACCENT} strokeWidth={1.5} />;
         })()}
-        {glyph}
+        {exporting ? glyph : (
+          <g transform={`translate(${cx} ${cy})`}>
+            <g className="station-glyph">
+              <g transform={`translate(${-cx} ${-cy})`}>{glyph}</g>
+            </g>
+          </g>
+        )}
       </g>,
     );
 
     if (s.label) {
       const sec = sectionAt(doc, s);
       const haloColour = sec ? tintList[sec.tint % tintList.length] : exporting ? null : th.surface;
-      const { x, y, anchor } = labelAt.get(s.id) ?? labelPlacement(s, kind, n, sideOf.get(s.id));
+      const { x, y, anchor } = labelAt.get(s.id) ?? labelPlacement(s, dv, sideOf.get(s.id));
       const common = { x, y, textAnchor: anchor, fontSize: 13, fontWeight: 600 } as const;
       // The halo is a separate stroked copy underneath (paint-order is not portable to PDF).
       const rows = s.label.split('\n');
@@ -749,16 +735,15 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
             </tspan>
           ),
         );
-      if (haloColour)
-        labelEls.push(
-          <text key={`hl-${s.id}`} {...common} fill={haloColour} stroke={haloColour} strokeWidth={4} strokeLinejoin="round" aria-hidden="true">
-            {body(haloColour)}
-          </text>,
-        );
       labelEls.push(
-        <text key={`lb-${s.id}`} data-sel={`station:${s.id}`} {...common} fill={s.optional || s.inactive ? th.muted : th.ink}>
-          {body(th.muted)}
-        </text>,
+        <g key={`label-${s.id}`} data-station-label={s.id}>
+          {haloColour && <text {...common} fill={haloColour} stroke={haloColour} strokeWidth={4} strokeLinejoin="round" aria-hidden="true">
+            {body(haloColour)}
+          </text>}
+          <text data-sel={`station:${s.id}`} {...common} fill={s.optional || s.inactive ? th.muted : th.ink}>
+            {body(th.muted)}
+          </text>
+        </g>,
       );
     }
   }
@@ -774,24 +759,29 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected }: 
     const kinds = legendKinds(doc, dv);
     const lay = legendLayout(doc, rows.map((l) => l.name), kinds);
     rows.forEach((l, i) => {
-      const st = withPattern(lineStyle(doc.palette, l.slot, theme), l.pattern);
+      const paint = linePaint(doc.palette, l.slot, theme, l.pattern);
+      const stroke = { stroke: paint.color, strokeDasharray: paint.dash, strokeLinecap: paint.cap };
       const lx = x + lay.lines[i].dx;
       const ry = y + lay.lines[i].dy;
-      const dash = st.pattern === 'dashed' ? '12 8' : st.pattern === 'dotted' ? '2 10' : undefined;
-      if (l.planned) {
+      if (paint.pattern === 'hollow') {
+        legendEls.push(
+          <path key={`lg-${l.id}`} d={hollowPath([{ x: lx, y: ry }, { x: lx + LEGEND_LINE_WIDTH, y: ry }], 0, { r45: 0, r90: 0 }, W, tokens.planned.wall)}
+            fill="none" {...stroke} strokeWidth={tokens.planned.wall} strokeLinejoin="round" />,
+        );
+      } else if (l.planned) {
         legendEls.push(
           <g key={`lg-${l.id}`}>
-            <path d={`M ${lx} ${ry - 3.5} H ${lx + 32}`} stroke={st.color} strokeWidth={3} />
-            <path d={`M ${lx} ${ry + 3.5} H ${lx + 32}`} stroke={st.color} strokeWidth={3} />
+            <path d={`M ${lx} ${ry - 3.5} H ${lx + LEGEND_LINE_WIDTH}`} {...stroke} strokeWidth={3} />
+            <path d={`M ${lx} ${ry + 3.5} H ${lx + LEGEND_LINE_WIDTH}`} {...stroke} strokeWidth={3} />
           </g>,
         );
       } else {
         legendEls.push(
-          <path key={`lg-${l.id}`} d={`M ${lx} ${ry} H ${lx + 32}`} stroke={st.color} strokeWidth={W} strokeDasharray={dash} strokeLinecap={st.pattern === 'dotted' ? 'round' : 'butt'} />,
+          <path key={`lg-${l.id}`} d={`M ${lx} ${ry} H ${lx + LEGEND_LINE_WIDTH}`} {...stroke} strokeWidth={W} />,
         );
       }
       legendEls.push(
-        <text key={`lgt-${l.id}`} x={lx + 42} y={ry + 4} fontSize={12} fill={th.ink}>
+        <text key={`lgt-${l.id}`} x={lx + LEGEND_LABEL_OFFSET} y={ry + 4} fontSize={12} fill={th.ink}>
           {l.name}
         </text>,
       );

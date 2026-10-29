@@ -4,16 +4,21 @@ import { download, ExportDialog, slug, type ExportFormat } from './exporters';
 import { IFit, IHelp, IMinus, IPlus, IRedo, IUndo } from './icons';
 import { isBackup, restoreBackup } from './library';
 import { importFile } from './importers';
-import { roundedPath, routeCentre } from './geometry';
-import { derive, emptyDoc, mergeStations, pruneLines, snap, snapStation, stationAt, uid, usedLines, type Doc, type Station } from './model';
+import { createStation, derive, emptyDoc, mergeStations, pruneLines, snap, snapStation, uid, usedLines, type Doc, type StationKind } from './model';
 import { Inspector, LeftRail, TOOLS, type Tool } from './panels';
 import { edgeGeometry, MetroMap } from './render';
 import { useDocument } from './store';
 import { usePanZoom } from './panzoom';
-import type { ThemeId } from './tokens';
+import { lineStyle, type ThemeId } from './tokens';
 import { Menu, Wordmark } from './ui';
 import { ShareDialog, ShortcutsDialog } from './dialogs';
 import { MORPH } from './motion';
+import { FusionPreview, PlacementGhost, StationHalo } from './CanvasFeedback';
+import { connectionTarget, connectStations, previewStationMerge, snapTarget } from './interaction';
+import { useStationMotion } from './useStationMotion';
+import { useMapLayoutMotion } from './useMapLayoutMotion';
+
+const NO_DRAGGED_STATIONS: readonly string[] = [];
 
 type DragState =
   | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
@@ -61,31 +66,82 @@ export default function Editor({
       setSavedDoc(d);
     },
   );
-  const { doc, update, preview, checkpoint, undo, redo } = store;
+  const { doc, update, preview, checkpoint, undo, redo, replace } = store;
   const [tool, setToolState] = useState<Tool>('select');
+  const [stationKind, setStationKind] = useState<StationKind>('step');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState<string | null>(null);
   const [activeLine, setActiveLine] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeId>('light');
   const [view, setView] = useState({ x: -40, y: -40, k: 1 });
   const [drag, setDrag] = useState<DragState | null>(null);
-  const [editing, setEditing] = useState<string | null>(null);
+  const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
+  const mergeTargetRef = useRef<string | null>(null);
+  const cancelDragRef = useRef<(() => void) | null>(null);
+  const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const hoveredRef = useRef<string | null>(null);
+  const [previewId] = useState(() => uid('preview'));
   const lastClient = useRef({ x: 0, y: 0 });
+  const lastCamera = useRef(view);
   const svgRef = useRef<SVGSVGElement>(null);
+  const feedbackRef = useRef<SVGGElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
+  const inspectorRef = useRef<HTMLElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const space = useRef(false);
   const lastDown = useRef<{ key: string; at: number } | null>(null);
+  const stationMotion = useStationMotion(svgRef, feedbackRef, doc);
+  const derived = useMemo(() => derive(doc), [doc]);
+
+  const setHovered = (id: string | null) => {
+    hoveredRef.current = id;
+    setHoveredId(id);
+  };
+  const clearPointer = () => {
+    setCursor(null);
+    setHovered(null);
+  };
+  const setSpace = (held: boolean) => {
+    space.current = held;
+    // Cursor feedback must be immediate even when no React state changes.
+    svgRef.current?.classList.toggle('pan-ready', held);
+    if (held) clearPointer();
+  };
+  const cancelConnection = () => {
+    setPending(null);
+    clearPointer();
+  };
+  const clearDrag = () => {
+    cancelDragRef.current = null;
+    setDrag(null);
+    setMergeTargetId(null);
+    mergeTargetRef.current = null;
+  };
+  const cancelGesture = () => {
+    cancelDragRef.current?.();
+    clearDrag();
+    cancelConnection();
+  };
+  const undoEdit = () => { stationMotion.cancel(); clearDrag(); cancelConnection(); undo(); };
+  const redoEdit = () => { stationMotion.cancel(); cancelGesture(); redo(); };
 
   const active = activeLine && doc.lines.some((l) => l.id === activeLine) ? activeLine : doc.lines[0]?.id ?? null;
   const setTool = (t: Tool) => {
     setToolState(t);
-    setPending(null);
+    if (t === 'station') setStationKind('step');
+    cancelConnection();
+    setSelected(new Set());
+    lastDown.current = null;
+  };
+  const selectLine = (id: string) => {
+    cancelConnection();
+    setActiveLine(id);
   };
 
   const toWorld = useCallback(
@@ -95,6 +151,17 @@ export default function Editor({
     },
     [view],
   );
+
+  useLayoutEffect(() => {
+    if (lastCamera.current === view) return;
+    lastCamera.current = view;
+    if (!cursor || (tool !== 'line' && tool !== 'station')) return;
+    const point = toWorld(lastClient.current.x, lastClient.current.y);
+    setCursor(point);
+    const target = snapTarget(doc, derived, point, view.k, hoveredRef.current, tool === 'line' ? pending : null);
+    hoveredRef.current = target?.id ?? null;
+    setHoveredId(target?.id ?? null);
+  }, [view, cursor, tool, pending, doc, derived, toWorld]);
 
   const flash = (m: string) => {
     setToast(m);
@@ -130,7 +197,7 @@ export default function Editor({
   useEffect(() => {
     const t = window.setTimeout(() => {
       if (!initial.stations.length && !initial.sections.length) {
-        setToolState('line');
+        setToolState('station');
         titleRef.current?.select();
       }
     }, 50);
@@ -197,11 +264,6 @@ export default function Editor({
     });
     setSelected(new Set());
   }, [selected, update]);
-
-  const newStation = (p: { x: number; y: number }): Station => {
-    const pos = snapStation(p, 'h');
-    return { id: uid('s'), x: pos.x, y: pos.y, label: '', kind: 'step', axis: 'h', labelSide: 'auto' };
-  };
 
   // ---------------------------------------------------------------- clipboard
   const pasteCount = useRef(0);
@@ -282,17 +344,13 @@ export default function Editor({
   });
 
   const connect = (from: string, to: string) => {
-    if (from === to || !active) return;
-    update((d) => {
-      const before = usedLines(d);
-      const e = d.edges.find((x) => (x.from === from && x.to === to) || (x.from === to && x.to === from));
-      if (e) {
-        if (e.lines.includes(active)) {
-          if (e.lines.length > 1) e.lines = e.lines.filter((l) => l !== active);
-        } else e.lines.push(active);
-      } else d.edges.push({ id: uid('e'), from, to, lines: [active], bend: 0.5 });
-      pruneLines(d, before);
-    });
+    if (!active) return;
+    const change = connectStations(doc, from, to, active, uid('e'));
+    if (change) {
+      const colour = lineStyle(doc.palette, doc.lines.find((l) => l.id === active)!.slot, theme).color;
+      stationMotion.request({ kind: 'connect', id: to, edgeId: change.edgeId, lineId: active, colour });
+      replace(change.doc);
+    }
   };
 
   // ---------------------------------------------------------------- keyboard
@@ -319,13 +377,13 @@ export default function Editor({
       if (typing || exporting || help || sharing) return;
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault();
-        if (e.shiftKey) redo();
-        else undo();
+        if (e.shiftKey) redoEdit();
+        else undoEdit();
         return;
       }
       if (mod && e.key.toLowerCase() === 'y') {
         e.preventDefault();
-        redo();
+        redoEdit();
         return;
       }
       if (mod && e.key.toLowerCase() === 'a') {
@@ -343,17 +401,24 @@ export default function Editor({
         return;
       }
       if (mod) return;
-      if (e.key === ' ') space.current = true;
+      if (e.key === ' ') {
+        // Space still activates a focused toolbar button using native keyboard behaviour.
+        if ((e.target as Element | null)?.closest?.('button, [role="button"]')) return;
+        e.preventDefault();
+        setSpace(true);
+        return;
+      }
       if (e.key === 'Escape') {
-        setPending(null);
-        setCursor(null);
+        if (drag) cancelGesture();
+        cancelConnection();
         setSelected(new Set());
+        if (tool === 'station') setToolState('select');
       }
       if (e.key === 'Enter') {
         const only = [...selected];
         if (only.length === 1 && only[0].startsWith('station:')) {
           e.preventDefault();
-          setEditing(only[0].slice(8));
+          setRenameTarget(only[0].slice(8));
         }
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -383,13 +448,23 @@ export default function Editor({
       }
     };
     const onUp = (e: KeyboardEvent) => {
-      if (e.key === ' ') space.current = false;
+      if (e.key === ' ') setSpace(false);
     };
+    const onBlur = () => {
+      setSpace(false);
+      if (drag) cancelGesture();
+      else clearPointer();
+    };
+    const onVisibility = () => { if (document.hidden) onBlur(); };
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onUp);
+    window.addEventListener('blur', onBlur);
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onUp);
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   });
 
@@ -402,6 +477,8 @@ export default function Editor({
   };
 
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.button !== 0 && e.button !== 1) return;
+    lastClient.current = { x: e.clientX, y: e.clientY };
     // Keep focus where we put it (e.g. the inline name editor) and close any field being typed in.
     e.preventDefault();
     // Clicking the canvas commits an open name editor (via blur) and carries on.
@@ -409,10 +486,53 @@ export default function Editor({
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     const w = toWorld(e.clientX, e.clientY);
     if (e.button === 1 || space.current) {
+      clearPointer();
       setDrag({ kind: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y });
       return;
     }
     const h = hit(e.target);
+    setMergeTargetId(null);
+    mergeTargetRef.current = null;
+
+    if (tool === 'line') {
+      const target = connectionTarget(doc, derived, w, view.k, {
+        hitId: h?.kind === 'station' ? h.id : null, hoverId: hoveredRef.current, sourceId: pending, pointerType: e.pointerType,
+      });
+      setCursor(w);
+      setHovered(null);
+      if (!target || !active || target.id === pending) {
+        setPending(null);
+      } else {
+        if (pending) connect(pending, target.id);
+        setPending(target.id);
+        setSelected(new Set());
+      }
+      return;
+    }
+
+    if (tool === 'station' && (!h || h.kind === 'section' || h.kind === 'edge')) {
+      // A nearby existing marker blocks placement; Station never connects it.
+      const occupied = snapTarget(doc, derived, w, view.k, null);
+      if (occupied) {
+        setToolState('select');
+        clearPointer();
+        setSelected(new Set([`station:${occupied.id}`]));
+        return;
+      }
+      const s = createStation(w, stationKind);
+      stationMotion.request({ kind: 'place', id: s.id });
+      update((d) => { d.stations.push(s); });
+      setHovered(s.id);
+      setCursor(w);
+      setSelected(new Set());
+      return;
+    }
+
+    if (tool === 'station' && h?.kind === 'station') {
+      setToolState('select');
+      clearPointer();
+    }
+
     const handle = (e.target as Element).getAttribute?.('data-handle');
 
     const bendHandle = (e.target as Element).getAttribute?.('data-bend');
@@ -423,24 +543,6 @@ export default function Editor({
     if (handle) {
       const s = doc.sections.find((x) => x.id === handle);
       if (s) setDrag({ kind: 'resize', id: s.id, start: w, orig: { w: s.w, h: s.h }, moved: false });
-      return;
-    }
-
-    if (tool === 'line' && (!h || h.kind === 'station' || h.kind === 'section')) {
-      if (h?.kind === 'station') {
-        if (pending && pending !== h.id) connect(pending, h.id);
-        setPending(h.id);
-        setSelected(new Set([`station:${h.id}`]));
-      } else if (!h || h.kind === 'section') {
-        const s = newStation(w);
-        update((d) => {
-          d.stations.push(s);
-          if (pending && active) d.edges.push({ id: uid('e'), from: pending, to: s.id, lines: [active], bend: 0.5 });
-        });
-        setPending(s.id);
-        setSelected(new Set([`station:${s.id}`]));
-        setEditing(s.id);
-      }
       return;
     }
 
@@ -464,7 +566,7 @@ export default function Editor({
     if (h.kind === 'station' && lastDown.current && lastDown.current.key === key && now - lastDown.current.at < 400) {
       lastDown.current = null;
       setSelected(new Set([key]));
-      setEditing(h.id);
+      setRenameTarget(h.id);
       return;
     }
     lastDown.current = { key, at: now };
@@ -501,7 +603,14 @@ export default function Editor({
 
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     lastClient.current = { x: e.clientX, y: e.clientY };
-    if (tool === 'line' && pending && !drag) setCursor(toWorld(e.clientX, e.clientY));
+    if ((tool === 'line' || tool === 'station') && !drag && !space.current) {
+      const point = toWorld(e.clientX, e.clientY);
+      setCursor((current) => tool === 'station' ? point : current ?? point);
+      const h = hit(e.target);
+      const exclude = tool === 'line' ? pending : null;
+      const direct = h?.kind === 'station' && h.id !== exclude ? derived.byId.get(h.id) : null;
+      setHovered((direct ?? snapTarget(doc, derived, point, view.k, tool === 'line' ? hoveredRef.current : null, exclude))?.id ?? null);
+    }
     if (!drag) return;
     if (drag.kind === 'pan') {
       setView((v) => ({ ...v, x: drag.vx - (e.clientX - drag.sx) / v.k, y: drag.vy - (e.clientY - drag.sy) / v.k }));
@@ -514,7 +623,7 @@ export default function Editor({
     }
     if (drag.kind === 'bend') {
       if (!drag.moved) {
-        checkpoint();
+        cancelDragRef.current = checkpoint();
         setDrag({ ...drag, moved: true });
       }
       const u = drag.axis === 'h' ? w.x : w.y;
@@ -547,7 +656,7 @@ export default function Editor({
     const dy = w.y - drag.start.y;
     if (!drag.moved) {
       if (Math.hypot(dx, dy) * view.k < 3) return;
-      checkpoint();
+      cancelDragRef.current = checkpoint();
       setDrag({ ...drag, moved: true });
       // Once the layout is being rearranged, the legend and title block stay where they are.
       if (drag.kind === 'stations' || drag.kind === 'section' || drag.kind === 'resize') {
@@ -572,6 +681,9 @@ export default function Editor({
       const o = drag.orig.get(drag.ids[0]);
       if (!lead || !o) return;
       const p = snapStation({ x: o.x + dx, y: o.y + dy }, lead.axis);
+      const target = drag.ids.length === 1 ? snapTarget(doc, derived, p, view.k, mergeTargetRef.current, lead.id) : null;
+      mergeTargetRef.current = target?.id ?? null;
+      setMergeTargetId(target?.id ?? null);
       const ddx = p.x - o.x;
       const ddy = p.y - o.y;
       preview((d) => {
@@ -622,17 +734,17 @@ export default function Editor({
     }
   };
 
-  // A single station dropped onto another one merges into it (the drag's checkpoint makes it one undo step).
-  const mergeTarget = useMemo(() => {
-    if (drag?.kind !== 'stations' || !drag.moved || drag.ids.length !== 1) return null;
-    const lead = doc.stations.find((s) => s.id === drag.ids[0]);
-    return lead ? (stationAt(doc, lead, new Set(drag.ids)) ?? null) : null;
-  }, [drag, doc]);
+  // The drag owns one checkpoint, including fusion; previews are derived views only.
+  const mergingStation = drag?.kind === 'stations' && drag.moved && drag.ids.length === 1 ? derived.byId.get(drag.ids[0]) : null;
+  const mergeTarget = mergingStation && mergeTargetId ? derived.byId.get(mergeTargetId) : null;
+  const mergePreview = useMemo(() => mergingStation && mergeTarget
+    ? previewStationMerge(doc, mergingStation.id, mergeTarget.id) : null, [doc, mergingStation, mergeTarget]);
 
   const onPointerUp = () => {
     if (drag?.kind === 'stations' && mergeTarget) {
       const from = drag.ids[0];
       const into = mergeTarget;
+      stationMotion.request({ kind: 'merge', id: into.id });
       preview((d) => mergeStations(d, from, into.id));
       setSelected(new Set([`station:${into.id}`]));
       flash(`Merged into ${into.label || 'the station there'}. Undo to separate them again.`);
@@ -649,24 +761,40 @@ export default function Editor({
         setTool('select');
       }
     }
-    setDrag(null);
+    clearDrag();
   };
 
   usePanZoom(svgRef, setView, lastClient);
 
-  // ---------------------------------------------------------------- inline label editor
-  const editStation = editing ? doc.stations.find((s) => s.id === editing) : null;
-  const finishEdit = (value: string | null) => {
-    if (editStation && value !== null && value !== editStation.label) {
-      update((d) => {
-        const s = d.stations.find((x) => x.id === editStation.id);
-        if (s) s.label = value.trim();
-      });
+  // Rename and property edits share one field in the inspector.
+  useLayoutEffect(() => {
+    if (!renameTarget) return;
+    if (selected.has(`station:${renameTarget}`)) {
+      const field = inspectorRef.current?.querySelector<HTMLTextAreaElement>('[aria-label="Station name"]');
+      field?.focus();
+      field?.select();
     }
-    setEditing(null);
-  };
+    setRenameTarget(null);
+  }, [renameTarget, selected]);
 
-  const pendingStation = pending ? doc.stations.find((s) => s.id === pending) ?? null : null;
+  const pendingStation = pending ? derived.byId.get(pending) ?? null : null;
+  const hoveredStation = hoveredId ? derived.byId.get(hoveredId) ?? null : null;
+  const canPreview = cursor !== null && drag === null;
+  // Geometry changes only when the target changes, never on every pointer move.
+  const candidate = useMemo(() => {
+    if (tool !== 'line' || !pending || !hoveredId || !active || !canPreview) return null;
+    return connectStations(doc, pending, hoveredId, active, previewId);
+  }, [doc, tool, pending, hoveredId, active, previewId, canPreview]);
+  const displayDoc = mergePreview ?? candidate?.doc ?? doc;
+  const directlyMoved = useMemo(() => drag?.kind === 'stations' && drag.moved ? drag.ids
+    : drag?.kind === 'section' && drag.moved ? [...drag.members.keys()] : NO_DRAGGED_STATIONS, [drag]);
+  useMapLayoutMotion(svgRef, feedbackRef, displayDoc, directlyMoved, Boolean(drag && 'moved' in drag && drag.moved));
+  const displayDerived = useMemo(() => displayDoc === doc ? derived : derive(displayDoc), [displayDoc, doc, derived]);
+  const mapView = useMemo(() => (
+    <MetroMap doc={displayDoc} theme={theme} selected={selected}
+      previewConnection={candidate && active ? { edgeId: candidate.edgeId, lineId: active } : undefined} />
+  ), [displayDoc, theme, selected, candidate, active]);
+  const activeStyle = active ? lineStyle(doc.palette, doc.lines.find((l) => l.id === active)!.slot, theme) : null;
   // A selected connection with a diagonal (or a cross-over step) gets a handle to slide it along.
   const bendInfo = useMemo(() => {
     const keys = [...selected];
@@ -716,10 +844,10 @@ export default function Editor({
           </span>
         )}
         <div className="group">
-          <button className="icon" onClick={undo} disabled={!store.canUndo} title="Undo (⌘Z)" aria-label="Undo">
+          <button className="icon" onClick={undoEdit} disabled={!store.canUndo} title="Undo (⌘Z)" aria-label="Undo">
             <IUndo />
           </button>
-          <button className="icon" onClick={redo} disabled={!store.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">
+          <button className="icon" onClick={redoEdit} disabled={!store.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">
             <IRedo />
           </button>
         </div>
@@ -766,7 +894,7 @@ export default function Editor({
       {banner}
       <div className="body">
         <aside className="panel left">
-          <LeftRail doc={doc} update={update} tool={tool} setTool={setTool} active={active} setActive={setActiveLine} theme={theme} />
+          <LeftRail doc={doc} update={update} tool={tool} setTool={setTool} active={active} setActive={selectLine} theme={theme} />
         </aside>
 
         <main
@@ -780,11 +908,16 @@ export default function Editor({
         >
           <svg
             ref={svgRef}
-            className={`canvas tool-${tool}${drag?.kind === 'pan' ? ' panning' : ''}`}
+            className={`canvas tool-${tool}${space.current ? ' pan-ready' : ''}${drag?.kind === 'pan' ? ' panning'
+              : drag?.kind === 'resize' ? ' resizing' : drag?.kind === 'marquee' ? ' marquee'
+                : drag && ['stations', 'section', 'legend', 'title', 'bend'].includes(drag.kind) ? ' dragging' : ''}`}
             style={{ viewTransitionName: MORPH }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
+            onPointerLeave={clearPointer}
+            onPointerCancel={cancelGesture}
+            onLostPointerCapture={() => { if (cancelDragRef.current) cancelGesture(); }}
           >
             <defs>
               <pattern id="grid" width={16 * view.k} height={16 * view.k} patternUnits="userSpaceOnUse" x={-view.x * view.k} y={-view.y * view.k}>
@@ -793,17 +926,18 @@ export default function Editor({
             </defs>
             <rect width="100%" height="100%" fill="url(#grid)" />
             <g transform={`scale(${view.k}) translate(${-view.x} ${-view.y})`}>
-              <MetroMap doc={doc} theme={theme} selected={selected} />
-              {tool === 'line' && pendingStation && cursor && !drag && (
-                <g className="rubber" pointerEvents="none">
-                  <path d={roundedPath(routeCentre(pendingStation, pendingStation.axis, snapStation(cursor, 'h'), 'h', 0.5), 0, { r45: 40, r90: 32 })} />
-                  <circle cx={snapStation(cursor, 'h').x} cy={snapStation(cursor, 'h').y} r={9} />
-                </g>
-              )}
+              {mapView}
+              {tool === 'station' && cursor && !hoveredStation && !drag && <PlacementGhost point={cursor} kind={stationKind} theme={theme} />}
+              {tool === 'line' && pendingStation && activeStyle && <StationHalo station={pendingStation}
+                derived={displayDerived} zoom={view.k} colour={activeStyle.color} source />}
+              {(tool === 'line' || tool === 'station') && hoveredStation && !drag && <StationHalo key={hoveredStation.id} station={hoveredStation}
+                derived={displayDerived} zoom={view.k} colour={tool === 'line' && activeStyle ? activeStyle.color : '#1f6fae'} />}
               {selectedSections.map((s) => (
                 <rect key={`h-${s.id}`} data-handle={s.id} className="handle" x={s.x + s.w - 6} y={s.y + s.h - 6} width={12} height={12} rx={3} />
               ))}
-              {mergeTarget && <circle className="merge-target" cx={mergeTarget.x} cy={mergeTarget.y} r={18} />}
+              {mergeTarget && mergingStation && <FusionPreview from={mergingStation} into={mergeTarget}
+                derived={displayDerived} zoom={view.k} />}
+              <g ref={feedbackRef} className="station-feedback" pointerEvents="none" aria-hidden="true" />
               {bendInfo && (
                 <circle className="bend-handle" data-bend={bendInfo.id} cx={bendInfo.at.x} cy={bendInfo.at.y} r={7 / Math.max(view.k, 0.5)} />
               )}
@@ -832,44 +966,21 @@ export default function Editor({
 
           {empty && (
             <div className="empty">
-              {tool === 'line' ? 'Click to place the first station' : (
+              {tool === 'station' ? 'Click to place stations. Connect them when you’re ready.' : (
                 <>
-                  Press <kbd>L</kbd> and click to start a line
+                  Press <kbd>S</kbd> and click to place stations
                 </>
               )}
             </div>
           )}
 
-          {editStation && (
-            <textarea
-              key={editStation.id}
-              className="inline-edit"
-              style={{
-                left: (editStation.x - view.x) * view.k,
-                top: (editStation.y - view.y) * view.k - 44 - 16 * (editStation.label.split('\n').length - 1),
-                width: Math.min(480, Math.max(200, 32 + 7.6 * Math.max(...editStation.label.split('\n').map((r) => r.length)))),
-              }}
-              defaultValue={editStation.label}
-              rows={editStation.label.split('\n').length}
-              onInput={(e) => {
-                const t = e.currentTarget;
-                t.rows = t.value.split('\n').length;
-                t.style.width = `${Math.min(480, Math.max(200, 32 + 7.6 * Math.max(...t.value.split('\n').map((r) => r.length))))}px`;
-              }}
-              placeholder="Name"
-              autoFocus
-              onFocus={(e) => e.target.select()}
-              onKeyDown={(e) => {
-                // Enter commits; Shift+Enter adds a detail line.
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  finishEdit((e.target as HTMLTextAreaElement).value);
-                }
-                if (e.key === 'Escape') finishEdit(null);
-                e.stopPropagation();
-              }}
-              onBlur={(e) => finishEdit(e.target.value)}
-            />
+          {mergeTarget && <div className="canvas-hint" role="status">Release to merge into {mergeTarget.label || 'this station'}</div>}
+
+          {!empty && (tool === 'station' || tool === 'line') && (
+            <div className="canvas-hint">
+              <span>{tool === 'station' ? 'Click to place a station' : pendingStation ? hoveredStation ? candidate ? 'Click to connect' : 'Already connected · Click to continue' : 'Approach another station to preview' : 'Click a station to start'}</span>
+              <span className="hint-key">Esc {tool === 'station' ? 'to select' : 'to finish'}</span>
+            </div>
           )}
 
           <div className="float left-bottom">
@@ -896,8 +1007,10 @@ export default function Editor({
           )}
         </main>
 
-        <aside className="panel right">
-          <Inspector doc={doc} update={update} selected={selected} theme={theme} setTheme={setTheme} onDelete={deleteSelection} />
+        <aside className={`panel right${tool === 'station' || selected.size ? ' contextual' : ''}`} ref={inspectorRef}>
+          <button className="inspector-dismiss" onClick={() => setTool('select')} aria-label="Close properties">Close</button>
+          <Inspector doc={doc} update={update} selected={selected} theme={theme} setTheme={setTheme} onDelete={deleteSelection}
+            placement={tool === 'station' ? { kind: stationKind, setKind: setStationKind } : undefined} />
         </aside>
       </div>
 

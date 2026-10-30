@@ -165,6 +165,18 @@ try {
   await B.getByText('No maps yet').waitFor();
   if (await B.locator('.card-title', { hasText: 'Alpha map' }).count()) throw new Error("Bob can see Alice's personal map");
 
+  log('Bob updates his display name and Alice sees it in the group');
+  await B.getByRole('button', { name: 'Account profile', exact: true }).click();
+  await B.getByLabel('Display name', { exact: true }).fill('Bob Researcher');
+  await B.getByRole('button', { name: 'Save name', exact: true }).click();
+  await B.locator('.account-name', { hasText: 'Bob Researcher' }).waitFor();
+  await A.getByRole('button', { name: /all maps/ }).click();
+  await A.locator('.side-item', { hasText: 'Lab' }).click();
+  await A.getByRole('button', { name: 'Members & settings' }).click();
+  await A.locator('.member-list', { hasText: 'Bob Researcher' }).waitFor();
+  await A.getByRole('button', { name: 'Close', exact: true }).click();
+  await A.goto(groupMapUrl);
+
   log('both edit the group map: the later save is held back');
   await B.goto(groupMapUrl);
   await B.getByLabel('Map title').fill('Group map (Bob)');
@@ -181,6 +193,23 @@ try {
   await B.getByRole('button', { name: 'Leave group' }).click();
   await B.locator('.home-title', { hasText: 'My maps' }).waitFor();
   if (await B.locator('.side-item', { hasText: 'Lab' }).count()) throw new Error('group still listed after leaving');
+
+  log('an existing account without a name can defer the prompt, then complete its profile');
+  const d = await api('/api/collections/users/records', { method: 'POST', body: JSON.stringify({ email: 'dana@example.test', name: '', password: PASS, passwordConfirm: PASS }) }, su);
+  const Dpage = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
+  pages.D = Dpage;
+  await Dpage.goto(WEB);
+  await signIn(Dpage, 'dana@example.test');
+  await Dpage.getByRole('dialog', { name: 'Add your display name' }).waitFor();
+  if (await Dpage.getByLabel('Display name', { exact: true }).inputValue()) throw new Error('fallback email used as a profile name');
+  await Dpage.getByRole('button', { name: 'Not now', exact: true }).click();
+  await Dpage.getByRole('button', { name: 'Account profile', exact: true }).click();
+  await Dpage.getByLabel('Display name', { exact: true }).fill('Dana');
+  await Dpage.getByRole('button', { name: 'Save name', exact: true }).click();
+  await Dpage.locator('.account-name', { hasText: 'Dana' }).waitFor();
+  await Dpage.reload();
+  await Dpage.locator('.account-name', { hasText: 'Dana' }).waitFor();
+  if ((await api(`/api/collections/users/records/${d.id}`, {}, su)).name !== 'Dana') throw new Error('display name not saved');
 
   console.log('e2e passed');
 } catch (e) {

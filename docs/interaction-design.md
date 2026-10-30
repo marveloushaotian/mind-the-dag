@@ -322,6 +322,28 @@ Invitation requests use a mailto link with a subject and a plain-text template
 for name, institution or affiliation, and intended use. The mail client opens
 the draft; the visitor chooses what to fill in and when to send it.
 
+## Account profiles
+
+The required profile is one display name, with the account email shown read-only
+for identification. A display name may use any language or a preferred name;
+leading/trailing whitespace is removed and the limit is 120 characters. Group
+membership and account permissions are separate from the person's name.
+
+After the saved session is refreshed, an account without a name gets a gentle
+completion prompt. It can be dismissed for the current session and reopened from
+the account button. The same profile dialog is available on the workspace and
+through the compact account button in the editor and viewer. Saving sends only
+the current user's name, updates the shared session, and shows confirmation.
+Failed requests keep the form open for retry. Group lists use “Name not set” for
+an incomplete profile, rather than repeating “Member” as both name and role.
+
+This follows the preferred-name editing described by
+[Notion](https://www.notion.com/help/account-settings) and the independent profile
+name described by [GitHub](https://docs.github.com/en/account-and-profile/tutorials/personalize-your-profile).
+[Slack](https://slack.com/help/articles/204092246-Edit-your-profile) provides more
+directory fields, but those do not serve a current workflow in this small diagram
+editor. Avatars, affiliation and biography remain optional future additions.
+
 ## Sources and their application
 
 | Primary source | Principle used here |

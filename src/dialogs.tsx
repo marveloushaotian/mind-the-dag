@@ -9,14 +9,15 @@ import type { Place } from './Editor';
 export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = isMac ? '⌘' : 'Ctrl';
 
-export function Modal({ title, onClose, children, width = 420, bare }: { title: string; onClose: () => void; children: ReactNode; width?: number; bare?: boolean }) {
+export function Modal({ title, onClose, children, width = 420, bare, dismissible = true }: { title: string; onClose: () => void; children: ReactNode; width?: number; bare?: boolean; dismissible?: boolean }) {
   // Closing plays a short fade-out first (skipped with "reduce motion").
   const [closing, setClosing] = useState(false);
   const close = useCallback(() => {
+    if (!dismissible) return;
     if (reducedMotion()) return onClose();
     setClosing(true);
     window.setTimeout(onClose, 140);
-  }, [onClose]);
+  }, [onClose, dismissible]);
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && close();
     window.addEventListener('keydown', k);
@@ -26,13 +27,13 @@ export function Modal({ title, onClose, children, width = 420, bare }: { title: 
     <div className={`modal-backdrop${closing ? ' closing' : ''}`} onPointerDown={(e) => e.target === e.currentTarget && close()}>
       <div className={`modal${bare ? ' bare' : ''}`} role="dialog" aria-modal="true" aria-label={title} style={{ width }}>
         {bare ? (
-          <button className="icon modal-x" onClick={close} aria-label="Close">
+          <button className="icon modal-x" onClick={close} aria-label="Close" disabled={!dismissible}>
             <IClose size={16} />
           </button>
         ) : (
           <div className="modal-head">
             <h2>{title}</h2>
-            <button className="icon" onClick={close} aria-label="Close">
+            <button className="icon" onClick={close} aria-label="Close" disabled={!dismissible}>
               <IClose size={16} />
             </button>
           </div>

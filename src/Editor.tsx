@@ -17,6 +17,7 @@ import { FusionPreview, PlacementGhost, StationHalo } from './CanvasFeedback';
 import { connectionTarget, connectStations, previewStationMerge, snapTarget } from './interaction';
 import { useStationMotion } from './useStationMotion';
 import { useMapLayoutMotion } from './useMapLayoutMotion';
+import { AccountProfileButton } from './AccountProfile';
 import { followPlacement } from './placement';
 import { alignedPoint, alignAnchors, bendAtCoordinate, bendCoordinate, pointAnchors, sectionAnchors, stationAlignmentTargets,
   type AlignmentAnchor, type AlignmentLocks } from './alignment';
@@ -386,6 +387,10 @@ export default function Editor({
       const t = e.target as HTMLElement;
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
       const mod = e.metaKey || e.ctrlKey;
+      if (t?.closest('[role="dialog"]')) {
+        if (mod && ['s', 'o'].includes(e.key.toLowerCase())) e.preventDefault();
+        return;
+      }
       if (mod && e.key.toLowerCase() === 's') {
         // Maps save themselves; ⌘S just confirms it.
         e.preventDefault();
@@ -959,6 +964,7 @@ export default function Editor({
             }}
           />
         </div>
+        <AccountProfileButton compact />
       </header>
 
       {banner}

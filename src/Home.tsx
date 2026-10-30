@@ -9,6 +9,7 @@ import { download } from './exporters';
 import { emptyDoc, type Doc } from './model';
 import { docBounds, MetroMap } from './render';
 import CoverBackdrop from './CoverBackdrop';
+import { AccountProfileButton } from './AccountProfile';
 import { Modal, SignInCard, SignInDialog } from './dialogs';
 import {
   acceptInvitation,
@@ -198,9 +199,7 @@ function Account({ member }: { member: Member | null }) {
   if (!cloudEnabled) return null;
   return member ? (
     <div className="account">
-      <span className="account-name" title={member.email}>
-        {member.name}
-      </span>
+      <AccountProfileButton />
       <button onClick={signOut}>
         Sign out
       </button>

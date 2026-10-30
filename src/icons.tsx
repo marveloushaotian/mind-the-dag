@@ -25,6 +25,7 @@ export const IConnect = make(
   </>,
 );
 export const ISection = make(<rect {...P} x={2.5} y={3.5} width={13} height={11} rx={3} />);
+export const IUser = make(<><circle {...P} cx={9} cy={5.5} r={3} /><path {...P} d="M3 15.5 V14 a6 6 0 0 1 12 0 v1.5" /></>);
 export const IUndo = make(<path {...P} d="M6.5 4 L3 7.5 L6.5 11 M3.5 7.5 H11 A4 4 0 0 1 11 15.5 H8" />);
 export const IRedo = make(<path {...P} d="M11.5 4 L15 7.5 L11.5 11 M14.5 7.5 H7 A4 4 0 0 0 7 15.5 H10" />);
 export const IPlus = make(<path {...P} d="M9 3.5 V14.5 M3.5 9 H14.5" />);

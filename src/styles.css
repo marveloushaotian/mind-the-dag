@@ -339,8 +339,13 @@ button.danger.flush:hover:not(:disabled) { background: transparent; text-decorat
 .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .group-share { display: flex; flex-direction: column; gap: 10px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
 .modal .note.ok { color: var(--accent-ink); align-self: center; }
-.account { display: flex; align-items: center; gap: 10px; }
-.account-name { font-size: var(--text-body); font-weight: 600; color: var(--ink); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.account-name { font-size: var(--text-body); font-weight: 600; color: var(--ink); max-width: min(220px, 25vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-profile { border-color: transparent; background: transparent; padding: 0 8px; min-width: 36px; }
+.account-profile.compact { width: 36px; }
+.profile-form input[readonly] { background: var(--hover); color: var(--muted); }
+.modal .profile-hint { margin-top: -14px; }
+.toast.profile-toast { position: fixed; z-index: 60; bottom: 24px; }
 .group-empty { padding: 4px 0; }
 .pill { margin-left: 8px; font-size: var(--text-note); line-height: var(--leading-note); color: var(--accent-ink); background: #24b06414; border-radius: 6px; padding: 1px 6px; }
 .view-byline { font-size: var(--text-note); line-height: var(--leading-note); color: var(--faint); }

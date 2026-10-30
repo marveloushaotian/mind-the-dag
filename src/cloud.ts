@@ -24,12 +24,15 @@ export interface Member {
   id: string;
   name: string;
   email: string;
+  /** A fallback label is not a completed profile. */
+  needsName: boolean;
   /** The site admin: the only one who can create invitation links for new people. */
   admin: boolean;
 }
 const toMember = (r: RecordModel | null | undefined): Member | null =>
   r && r.collectionName === 'users'
-    ? { id: r.id, name: (r.name as string) || (r.email as string) || 'Member', email: (r.email as string) || '', admin: !!r.admin }
+    ? { id: r.id, name: (r.name as string)?.trim() || (r.email as string) || 'Member', email: (r.email as string) || '',
+        needsName: !((r.name as string)?.trim()), admin: !!r.admin }
     : null;
 
 export const currentMember = (): Member | null => (pb?.authStore.isValid ? toMember(pb.authStore.record) : null);
@@ -39,7 +42,7 @@ let memberSnapshot: Member | null = currentMember();
 const memberListeners = new Set<() => void>();
 pb?.authStore.onChange(() => {
   const next = currentMember();
-  if (next?.id === memberSnapshot?.id && next?.name === memberSnapshot?.name && next?.email === memberSnapshot?.email && next?.admin === memberSnapshot?.admin) return;
+  if (next?.id === memberSnapshot?.id && next?.name === memberSnapshot?.name && next?.email === memberSnapshot?.email && next?.needsName === memberSnapshot?.needsName && next?.admin === memberSnapshot?.admin) return;
   transition(() => {
     memberSnapshot = next;
     memberListeners.forEach((l) => l());
@@ -53,6 +56,23 @@ const subscribeMember = (l: () => void) => {
 /** The signed-in member, re-rendering on sign-in and sign-out (also from other tabs). */
 export function useMember(): Member | null {
   return useSyncExternalStore(subscribeMember, () => memberSnapshot);
+}
+
+export const DISPLAY_NAME_MAX = 120;
+
+/** Update only the signed-in person's display name; email and roles stay separate. */
+export async function updateProfile(name: string): Promise<void> {
+  const nameValue = name.trim();
+  if (!nameValue) throw new Error('Enter a display name.');
+  if (nameValue.length > DISPLAY_NAME_MAX) throw new Error(`Use ${DISPLAY_NAME_MAX} characters or fewer.`);
+  const who = me();
+  const c = client();
+  try {
+    const record = await c.collection('users').update(who.id, { name: nameValue });
+    if (c.authStore.isValid && c.authStore.record?.id === who.id) c.authStore.save(c.authStore.token, record);
+  } catch (e) {
+    throw new Error(explain(e, 'Could not save your profile. Please try again.'));
+  }
 }
 
 /** Turn server errors into sentences people can act on. */
@@ -136,7 +156,7 @@ export interface CloudMap {
   updated: string;
   editedByName: string | null;
 }
-const nameOf = (r: unknown) => ((r as RecordModel | undefined)?.name as string) || null;
+const nameOf = (r: unknown) => ((r as RecordModel | undefined)?.name as string)?.trim() || null;
 const toMap = (r: RecordModel): CloudMap => ({
   id: r.id,
   title: (r.title as string) || 'Untitled',
@@ -276,7 +296,7 @@ export async function listMembers(groupId: string): Promise<GroupMember[]> {
   return items.map((m) => ({
     membershipId: m.id,
     userId: m.user as string,
-    name: nameOf(m.expand?.user) ?? 'Member',
+    name: nameOf(m.expand?.user) ?? 'Name not set',
     role: m.role as GroupMember['role'],
   }));
 }

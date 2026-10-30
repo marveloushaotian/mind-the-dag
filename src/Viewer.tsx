@@ -5,6 +5,7 @@ import { usePanZoom, type View } from './panzoom';
 import { MetroMap } from './render';
 import { Wordmark } from './ui';
 import { MORPH } from './motion';
+import { AccountProfileButton } from './AccountProfile';
 
 /** Read-only view of a shared map (by link or from the group library), with a way to save one's own copy. */
 export default function Viewer({
@@ -67,6 +68,7 @@ export default function Viewer({
         {byline && <span className="view-byline">{byline}</span>}
         <div className="spacer" />
         {actions}
+        <AccountProfileButton compact />
         <button className="primary" disabled={!doc} onClick={() => doc && onCopy(doc)}>
           Make a copy
         </button>

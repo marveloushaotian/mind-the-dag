@@ -4,7 +4,7 @@ import Editor from './Editor';
 import Home from './Home';
 import Viewer from './Viewer';
 import Join from './Join';
-import { createCloudMap, explain, refreshSession, useMember } from './cloud';
+import { createCloudMap, explain, useMember } from './cloud';
 import { moveDraftsToCloud } from './drafts';
 import { createMap, goneKey, goneTo, loadMap, saveMap } from './library';
 import type { Doc } from './model';
@@ -39,7 +39,6 @@ export default function App() {
   // A draft open here that another tab moved to the cloud or deleted: follow it.
   const [, bump] = useState(0);
   useEffect(() => {
-    void refreshSession();
     const on = () => transition(() => setR(route()));
     const onStorage = (e: StorageEvent) => {
       const cur = route();

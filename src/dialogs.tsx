@@ -137,6 +137,10 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
 // Official marks dropped into src/brand/ (see README there) are used on the sign-in buttons.
 const BRAND = import.meta.glob<string>('./brand/*.svg', { eager: true, query: '?url', import: 'default' });
 const markFor = (p: Provider) => BRAND[`./brand/${p}-mark-white.svg`];
+const invitationEmail = `mailto:haotian.zheng@helsinki.fi?${new URLSearchParams({
+  subject: 'Mind the DAG — Invitation request',
+  body: 'Hello Haotian,\r\n\r\nI would like to request an invitation to Mind the DAG.\r\n\r\nName: \r\nInstitution / affiliation: \r\nIntended use: \r\n\r\nThank you!',
+}).toString().replace(/\+/g, '%20')}`;
 
 /** Sign-in options side by side in weight: GitHub, or the email and password of your account. */
 export function SignInCard({ onDone, autoFocus, title = 'Sign in', sub = 'Your maps in the cloud, and the groups you work in.', foot = true }: { onDone?: () => void; autoFocus?: boolean; title?: string; sub?: string; foot?: boolean }) {
@@ -195,7 +199,7 @@ export function SignInCard({ onDone, autoFocus, title = 'Sign in', sub = 'Your m
       {foot && (
         <p className="signin-foot">
           <strong>Invite only.</strong> New here?{' '}
-          <a href="mailto:haotian.zheng@helsinki.fi?subject=Mind%20the%20DAG%20%E2%80%94%20Invitation%20request">Request an invitation</a>.
+          <a href={invitationEmail}>Request an invitation</a>.
         </p>
       )}
     </div>

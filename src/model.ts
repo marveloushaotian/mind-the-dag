@@ -92,8 +92,14 @@ export interface Doc {
   stations: Station[];
   edges: Edge[];
   sections: Section[];
-  /** `auto` places the legend below the map until it is dragged. */
-  legend: { x: number; y: number; show: boolean; auto?: boolean; /** Columns the line key wraps into (default 1). */ cols?: number };
+  /** `auto` keeps the legend below the map until the legend itself is dragged. */
+  legend: {
+    x: number; y: number; show: boolean; auto?: boolean;
+    /** Saved lower-page baseline in map coordinates; independent of later pan/zoom. */
+    minY?: number;
+    /** Columns the line key wraps into (default 1). */
+    cols?: number;
+  };
 }
 
 export const PITCH = tokens.line.pitch;

@@ -265,8 +265,18 @@ export function legendKinds(doc: Doc, dv: Derived): string[] {
 }
 
 const r8 = (v: number) => Math.round(v / 8) * 8;
-export const autoLegendPos = (b: Bounds) => ({ x: r8(b.x0), y: r8(b.y1 + 48) });
+export const autoLegendPos = (b: Bounds, minY = -Infinity) => ({ x: r8(b.x0), y: Math.ceil(Math.max(b.y1 + 96, minY) / 8) * 8 });
 export const autoTitlePos = (b: Bounds) => ({ x: r8(b.x0), y: r8(b.y0 - 48) });
+
+/** Reserve drawing room once, as part of the edit that first introduces content. */
+export function reserveAutoLegend(doc: Doc, view: { y: number; k: number }, viewportHeight: number): void {
+  if (!doc.legend.auto || doc.legend.minY !== undefined || !viewportHeight || (!doc.stations.length && !doc.sections.length)) return;
+  const used = new Set(doc.edges.flatMap((e) => e.lines));
+  const names = doc.lines.filter((l) => used.has(l.id)).map((l) => l.name);
+  const layout = legendLayout(doc, names, legendKinds(doc, derive(doc)));
+  const bottomSpace = Math.max(112 / view.k, layout.height + 64 / view.k);
+  doc.legend.minY = Math.floor((view.y + viewportHeight / view.k - bottomSpace) / 8) * 8;
+}
 
 /** Everything drawn, including legend and title block (for thumbnails). */
 export function docBounds(doc: Doc): Bounds | null {
@@ -277,7 +287,7 @@ export function docBounds(doc: Doc): Bounds | null {
     const used = new Set(doc.edges.flatMap((e) => e.lines));
     const names = doc.lines.filter((l) => used.has(l.id)).map((l) => l.name);
     const lay = legendLayout(doc, names, legendKinds(doc, derive(doc)));
-    const p = doc.legend.auto ? autoLegendPos(c) : doc.legend;
+    const p = doc.legend.auto ? autoLegendPos(c, doc.legend.minY) : doc.legend;
     b.x0 = Math.min(b.x0, p.x - 16);
     b.x1 = Math.max(b.x1, p.x + lay.width);
     b.y0 = Math.min(b.y0, p.y - 16);
@@ -757,7 +767,7 @@ export function MetroMap({ doc, theme = 'light', exporting = false, selected, pr
   const legendEls: ReactNode[] = [];
   const content = contentBounds(doc);
   let legendOrigin = { x: doc.legend.x, y: doc.legend.y };
-  if (doc.legend.auto && content) legendOrigin = autoLegendPos(content);
+  if (doc.legend.auto && content) legendOrigin = autoLegendPos(content, doc.legend.minY);
   if (doc.legend.show) {
     const { x, y } = legendOrigin;
     const rows = doc.lines.filter((l) => usedLines.has(l.id));

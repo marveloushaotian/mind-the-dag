@@ -308,6 +308,20 @@ Cloud login discovery must be tested from the server's allowed local origin,
 `http://localhost:5173`; a new port or `127.0.0.1` is a different origin and cannot
 read provider options. The cover does not change account configuration or OAuth.
 
+## Legend working space and invitation requests
+
+An automatic legend reserves a lower-page baseline from the current viewport
+when content is first added or an existing automatic layout is first moved.
+The baseline is saved in map coordinates, so pan, zoom, reopening and export do
+not redock it. The legend stays at least 96 map units below the content bounds
+as stations and sections grow. Moving diagram content does not disable this
+avoidance; dragging the legend itself switches to manual positioning. Existing
+manual layouts, including the aligned landing example, retain their positions.
+
+Invitation requests use a mailto link with a subject and a plain-text template
+for name, institution or affiliation, and intended use. The mail client opens
+the draft; the visitor chooses what to fill in and when to send it.
+
 ## Sources and their application
 
 | Primary source | Principle used here |

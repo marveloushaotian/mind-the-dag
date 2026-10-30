@@ -6,7 +6,7 @@ import { isBackup, restoreBackup } from './library';
 import { importFile } from './importers';
 import { createStation, derive, emptyDoc, mergeStations, pruneLines, snap, snapStation, uid, usedLines, type Doc, type StationKind } from './model';
 import { Inspector, LeftRail, TOOLS, type Tool } from './panels';
-import { edgeGeometry, MetroMap } from './render';
+import { edgeGeometry, MetroMap, reserveAutoLegend } from './render';
 import { useDocument } from './store';
 import { usePanZoom } from './panzoom';
 import { lineStyle, tints, tokens, type ThemeId } from './tokens';
@@ -106,6 +106,11 @@ export default function Editor({
   const lastDown = useRef<{ key: string; at: number } | null>(null);
   const stationMotion = useStationMotion(svgRef, feedbackRef, doc);
   const derived = useMemo(() => derive(doc), [doc]);
+
+  const reserveLegend = (d: Doc) => {
+    const height = svgRef.current?.getBoundingClientRect().height;
+    if (height) reserveAutoLegend(d, view, height);
+  };
 
   const setHovered = (id: string | null) => {
     hoveredRef.current = id;
@@ -318,6 +323,7 @@ export default function Editor({
         d.sections.push({ ...structuredClone(s), id, x: s.x + off, y: s.y + off });
         sel.add(`section:${id}`);
       }
+      reserveLegend(d);
     });
     setSelected(sel);
   };
@@ -549,7 +555,7 @@ export default function Editor({
         ? followPlacement(placementPosition.current, w, 0, view.k) : undefined;
       stationMotion.request({ kind: 'place', id: s.id, colour: tokens.themes[theme].muted,
         from: origin });
-      update((d) => { d.stations.push(s); });
+      update((d) => { d.stations.push(s); reserveLegend(d); });
       setHovered(s.id);
       setCursor(w);
       setSelected(new Set());
@@ -709,17 +715,12 @@ export default function Editor({
       if (Math.hypot(dx, dy) * view.k < 3) return;
       cancelDragRef.current = checkpoint();
       setDrag({ ...drag, moved: true });
-      // Once the layout is being rearranged, the legend and title block stay where they are.
+      // The title stays fixed; automatic legends keep clearing the growing map.
       if (drag.kind === 'stations' || drag.kind === 'section' || drag.kind === 'resize') {
-        const lg = svgRef.current?.querySelector('[data-legend-origin]');
         const tl = svgRef.current?.querySelector('[data-title-origin]');
-        if ((doc.legend.auto && lg) || (doc.titleAuto && tl))
+        if ((doc.legend.auto && doc.legend.minY === undefined) || (doc.titleAuto && tl))
           preview((d) => {
-            if (d.legend.auto && lg) {
-              d.legend.x = Number(lg.getAttribute('data-x'));
-              d.legend.y = Number(lg.getAttribute('data-y'));
-              d.legend.auto = false;
-            }
+            reserveLegend(d);
             if (d.titleAuto && tl) {
               d.titlePos = { x: Number(tl.getAttribute('data-x')), y: Number(tl.getAttribute('data-y')) };
               d.titleAuto = false;
@@ -821,7 +822,10 @@ export default function Editor({
       const h = Math.abs(drag.cur.y - drag.start.y);
       if (w >= 64 && h >= 48) {
         const id = uid('sec');
-        update((d) => void d.sections.push({ id, name: `Section ${d.sections.length + 1}`, x, y, w, h, tint: d.sections.length % tints(d, theme).length }));
+        update((d) => {
+          d.sections.push({ id, name: `Section ${d.sections.length + 1}`, x, y, w, h, tint: d.sections.length % tints(d, theme).length });
+          reserveLegend(d);
+        });
         setTool('select');
         setSelected(new Set([`section:${id}`]));
       }

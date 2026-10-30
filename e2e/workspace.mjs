@@ -176,6 +176,7 @@ try {
   await A.locator('.member-list', { hasText: 'Bob Researcher' }).waitFor();
   await A.getByRole('button', { name: 'Close', exact: true }).click();
   await A.goto(groupMapUrl);
+  await saved(A);
 
   log('both edit the group map: the later save is held back');
   await B.goto(groupMapUrl);

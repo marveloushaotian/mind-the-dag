@@ -82,7 +82,7 @@ input[type='checkbox'] { accent-color: var(--ink); width: 15px; height: 15px; ma
 .app { display: flex; flex-direction: column; height: 100%; }
 .app > .topbar { height: 52px; flex: none; }
 .app > .body { flex: 1 1 0; }
-.topbar { display: flex; align-items: center; gap: 8px; padding: 0 12px 0 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.topbar { position: relative; z-index: 20; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .logo { display: inline-flex; }
 .doc-title {
   border-color: transparent !important; background: transparent !important; font-size: var(--text-title) !important; font-weight: 600;

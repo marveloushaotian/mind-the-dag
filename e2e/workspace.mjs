@@ -59,6 +59,38 @@ try {
   await A.waitForURL(/#\/map\//);
   await A.getByLabel('Map title').fill('Local one');
   await saved(A);
+
+  log('editor menus receive clicks above the canvas and export dialogs open');
+  for (const format of ['SVG', 'PDF', 'PNG']) {
+    await A.getByRole('button', { name: 'Export', exact: true }).click();
+    // A menu can be present in the DOM while a canvas stacking context covers it.
+    await A.getByRole('menuitem', { name: format, exact: true }).click({ timeout: 5000 });
+    const dialog = A.getByRole('dialog', { name: `Export ${format}`, exact: true });
+    await dialog.waitFor();
+    await dialog.getByRole('button', { name: 'Export', exact: true }).waitFor({ state: 'visible' });
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  }
+  await A.getByRole('button', { name: 'Open', exact: true }).click();
+  const openExample = A.getByRole('menuitem', { name: 'Example map', exact: true });
+  const receivesClick = await openExample.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('[role="menuitem"]') === el;
+  });
+  if (!receivesClick) throw new Error('Open menu is covered by the canvas');
+  await openExample.press('Escape');
+
+  log('an empty drawing explains why export is unavailable');
+  await A.getByRole('button', { name: 'Select V', exact: true }).click();
+  await A.getByRole('switch', { name: 'Legend', exact: true }).click();
+  await A.getByRole('button', { name: 'Export', exact: true }).click();
+  await A.getByRole('menuitem', { name: 'PDF', exact: true }).click();
+  const emptyExport = A.getByRole('dialog', { name: 'Export PDF', exact: true });
+  await emptyExport.getByRole('alert').filter({ hasText: 'There is nothing to export yet' }).waitFor();
+  if (!(await emptyExport.getByRole('button', { name: 'Export', exact: true }).isDisabled())) throw new Error('empty export should be disabled');
+  await emptyExport.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await A.getByRole('switch', { name: 'Legend', exact: true }).click();
+  await saved(A);
+
   await A.getByRole('button', { name: /all maps/ }).click();
   await A.getByText('Local one').waitFor();
 

@@ -159,16 +159,33 @@ export function journalFit(widthPx: number) {
 
 export type ExportFormat = 'svg' | 'pdf' | 'png';
 
+/** Keep export failures visible, including the common stale-tab chunk error. */
+export function exportError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module/i.test(message))
+    return 'The export tools could not be loaded. Reload this page and try exporting again.';
+  if (message === 'the map is empty')
+    return 'There is nothing to export yet. Add a station or section, or turn on the legend.';
+  if (/^font Inter \d+ not found$/.test(message))
+    return `An export font could not be loaded. Check your connection and try again. (${message})`;
+  return `Export failed: ${message}`;
+}
+
 export function ExportDialog({ doc, theme, format, onClose, onDone }: { doc: Doc; theme: ThemeId; format: ExportFormat; onClose: () => void; onDone: (m: string) => void }) {
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const [scale, setScale] = useState<'journal' | 'screen'>('journal');
   const [pngScale, setPngScale] = useState<'300' | '2x' | '1x'>('300');
   const [background, setBackground] = useState<Background>('transparent');
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
+    let live = true;
+    setSize(null);
+    setError(null);
     buildSvg(doc, theme, { embedFonts: false })
-      .then((b) => setSize({ w: b.width, h: b.height }))
-      .catch(() => setSize(null));
+      .then((b) => { if (live) setSize({ w: b.width, h: b.height }); })
+      .catch((err: unknown) => { if (live) setError(exportError(err)); });
+    return () => { live = false; };
   }, [doc, theme]);
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -191,6 +208,8 @@ export function ExportDialog({ doc, theme, format, onClose, onDone }: { doc: Doc
   const fit = size && (format === 'pdf' ? scale === 'journal' : format === 'png' ? pngScale === '300' : false) ? journalFit(size.w) : null;
 
   const go = async () => {
+    if (busy || !size) return;
+    setError(null);
     setBusy(true);
     try {
       if (format === 'svg') download(`${name}.svg`, new Blob([(await buildSvg(doc, theme, { embedFonts: true, background })).svg], { type: 'image/svg+xml' }));
@@ -199,7 +218,7 @@ export function ExportDialog({ doc, theme, format, onClose, onDone }: { doc: Doc
       onDone(`Exported ${format.toUpperCase()}`);
       onClose();
     } catch (err) {
-      onDone(`Export failed: ${(err as Error).message}`);
+      setError(exportError(err));
       setBusy(false);
     }
   };
@@ -237,14 +256,16 @@ export function ExportDialog({ doc, theme, format, onClose, onDone }: { doc: Doc
           </div>
         )}
         {summary && (
-          <p className={`summary${fit && !fit.fits ? ' warn' : ''}`}>
+          <p className="summary">
             {summary}
-            {fit && (fit.fits ? ` · fits a ${fit.fits}` : ' · wider than a double column')}
+            {fit?.fits && ` · fits a ${fit.fits}`}
           </p>
         )}
+        {fit && !fit.fits && <p className="note">Larger than a journal double column (183 mm). This does not prevent export.</p>}
+        {error && <p className="note warn" role="alert">{error}</p>}
         <div className="actions">
           <button onClick={onClose}>Cancel</button>
-          <button className="primary" onClick={go} disabled={busy}>
+          <button className="primary" onClick={go} disabled={busy || !size}>
             {busy ? 'Exporting…' : 'Export'}
           </button>
         </div>

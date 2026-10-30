@@ -194,7 +194,8 @@ export function SignInCard({ onDone, autoFocus, title = 'Sign in', sub = 'Your m
       {error && <p className="note warn">{error}</p>}
       {foot && (
         <p className="signin-foot">
-          <strong>Invite only.</strong> New here? Ask the admin for an invitation link.
+          <strong>Invite only.</strong> New here?{' '}
+          <a href="mailto:haotian.zheng@helsinki.fi?subject=Mind%20the%20DAG%20%E2%80%94%20Invitation%20request">Request an invitation</a>.
         </p>
       )}
     </div>

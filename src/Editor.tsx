@@ -11,7 +11,7 @@ import { useDocument } from './store';
 import { usePanZoom } from './panzoom';
 import { lineStyle, tints, tokens, type ThemeId } from './tokens';
 import { Menu, Wordmark } from './ui';
-import { isMac, ShareDialog, ShortcutsDialog } from './dialogs';
+import { ShareDialog, ShortcutsDialog } from './dialogs';
 import { MORPH } from './motion';
 import { FusionPreview, PlacementGhost, StationHalo } from './CanvasFeedback';
 import { connectionTarget, connectStations, previewStationMerge, snapTarget } from './interaction';
@@ -19,7 +19,7 @@ import { useStationMotion } from './useStationMotion';
 import { useMapLayoutMotion } from './useMapLayoutMotion';
 import { followPlacement } from './placement';
 import { alignedPoint, alignAnchors, bendAtCoordinate, bendCoordinate, pointAnchors, sectionAnchors, stationAlignmentTargets,
-  type AlignmentAnchor, type AlignmentGuide, type AlignmentLocks } from './alignment';
+  type AlignmentAnchor, type AlignmentLocks } from './alignment';
 import type { Pt } from './geometry';
 
 const NO_DRAGGED_STATIONS: readonly string[] = [];
@@ -96,7 +96,6 @@ export default function Editor({
   const svgRef = useRef<SVGSVGElement>(null);
   const feedbackRef = useRef<SVGGElement>(null);
   const placementPosition = useRef<{ x: number; y: number } | null>(null);
-  const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
   const alignmentLocks = useRef<AlignmentLocks>({});
   const dragTargets = useRef<AlignmentAnchor[]>([]);
   const placementTargets = useMemo(() => tool === 'station' ? stationAlignmentTargets(doc) : [], [doc, tool]);
@@ -114,12 +113,10 @@ export default function Editor({
   };
   const clearAlignment = () => {
     alignmentLocks.current = {};
-    setAlignmentGuides([]);
   };
   const align = (moving: AlignmentAnchor[], targets: AlignmentAnchor[], bypass = false) => {
     const result = alignAnchors(moving, targets, view.k, alignmentLocks.current, bypass);
     alignmentLocks.current = result.locks;
-    setAlignmentGuides(result.guides);
     return result;
   };
   const clearPointer = () => {
@@ -998,14 +995,6 @@ export default function Editor({
               {mapView}
               {tool === 'station' && cursor && !hoveredStation && !drag && <PlacementGhost
                 point={cursor} kind={stationKind} theme={theme} view={view} position={placementPosition} />}
-              {alignmentGuides.length > 0 && <g className="alignment-guides" data-alignment-guides pointerEvents="none" aria-hidden="true">
-                {alignmentGuides.map((guide) => <line key={guide.axis} data-alignment-axis={guide.axis}
-                  x1={guide.axis === 'x' ? guide.value : guide.from - 12 / view.k}
-                  y1={guide.axis === 'y' ? guide.value : guide.from - 12 / view.k}
-                  x2={guide.axis === 'x' ? guide.value : guide.to + 12 / view.k}
-                  y2={guide.axis === 'y' ? guide.value : guide.to + 12 / view.k}
-                  vectorEffect="non-scaling-stroke" />)}
-              </g>}
               {tool === 'line' && pendingStation && activeStyle && <StationHalo station={pendingStation}
                 derived={displayDerived} zoom={view.k} colour={activeStyle.color} source />}
               {(tool === 'line' || tool === 'station') && hoveredStation && !drag && <StationHalo key={hoveredStation.id} station={hoveredStation}
@@ -1053,15 +1042,11 @@ export default function Editor({
           )}
 
           {mergeTarget && <div className="canvas-hint" role="status">Release to merge into {mergeTarget.label || 'this station'}</div>}
-          {drag && alignmentGuides.length > 0 && !mergeTarget && <div className="canvas-hint">
-            <span>Aligned</span><span className="hint-key">Hold {isMac ? '⌘' : 'Ctrl'} to skip alignment</span>
-          </div>}
 
           {!empty && (tool === 'station' || tool === 'line') && (
             <div className="canvas-hint">
               <span>{tool === 'station' ? 'Click to place a station' : pendingStation ? hoveredStation ? candidate ? 'Click to connect' : 'Already connected · Click to continue' : 'Approach another station to preview' : 'Click a station to start'}</span>
               <span className="hint-key">Esc {tool === 'station' ? 'to select' : 'to finish'}</span>
-              {alignmentGuides.length > 0 && <span className="hint-key">Hold {isMac ? '⌘' : 'Ctrl'} to skip alignment</span>}
             </div>
           )}
 

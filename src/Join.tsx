@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { OAuthButton, SignInCard } from './dialogs';
 import { acceptSignupLink, explain, joinUrl, listMyGroups, signInProviders, signupInfo, signUpWith, signUpWithPassword, useMember, type Provider, type SignupInfo } from './cloud';
 import { Wordmark } from './ui';
+import CoverBackdrop from './CoverBackdrop';
 
 /** The page an invitation link opens: create an account (GitHub or email), or join with one you have. */
 export default function Join({ code, onDone }: { code: string; onDone: (groupId: string | null) => void }) {
@@ -52,6 +53,7 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
 
   return (
     <div className="home join-page">
+      <CoverBackdrop />
       <header className="topbar">
         <Wordmark />
       </header>

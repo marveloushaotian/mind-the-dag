@@ -26,3 +26,13 @@ export function placementFrames(from?: Pt): Keyframe[] {
     };
   });
 }
+
+/** Shared connection/fusion pulse, including the decorative cover journey. */
+export function stationPulseFrames(kind: 'connect' | 'merge', interruptedScale?: number): Keyframe[] {
+  const stages: [number, number][] = kind === 'merge'
+    ? [[0, 0.82], [0.32, 1.28], [0.62, 0.93], [0.82, 1.04], [1, 1]]
+    : [[0, 0.9], [0.35, 1.2], [0.7, 0.96], [1, 1]];
+  return stages.map(([offset, scale], i) => ({ offset,
+    transform: `scale(${i === 0 && interruptedScale !== undefined ? interruptedScale : scale})`,
+    easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' }));
+}

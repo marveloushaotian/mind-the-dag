@@ -8,6 +8,7 @@ import { moveDraftsToCloud } from './drafts';
 import { download } from './exporters';
 import { emptyDoc, type Doc } from './model';
 import { docBounds, MetroMap } from './render';
+import CoverBackdrop from './CoverBackdrop';
 import { Modal, SignInCard, SignInDialog } from './dialogs';
 import {
   acceptInvitation,
@@ -247,6 +248,7 @@ export default function Home({
   const landing = cloudEnabled && !member && !tryLocal;
   return (
     <div className={`home${landing ? ' landing-page' : ''}`}>
+      {landing && <CoverBackdrop />}
       <header className="topbar">
         <Wordmark />
         <span className="spacer" />

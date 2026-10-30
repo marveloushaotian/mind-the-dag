@@ -12,16 +12,9 @@ export interface AlignmentAnchor {
   priority?: number;
 }
 export type AlignmentLocks = Partial<Record<Coordinate, { moving: string; target: string }>>;
-export interface AlignmentGuide {
-  axis: Coordinate;
-  value: number;
-  from: number;
-  to: number;
-}
 export interface AlignmentResult {
   offset: Pt;
   locks: AlignmentLocks;
-  guides: AlignmentGuide[];
 }
 const ENTER = 4;
 const RELEASE = 7;
@@ -73,10 +66,9 @@ export function stationAlignmentTargets(doc: Doc, moving: readonly string[] = []
 /** Weak, screen-sized acquisition with a small release margin to avoid flicker. */
 export function alignAnchors(moving: readonly AlignmentAnchor[], targets: readonly AlignmentAnchor[], zoom: number,
   previous: AlignmentLocks = {}, bypass = false): AlignmentResult {
-  const result: AlignmentResult = { offset: { x: 0, y: 0 }, locks: {}, guides: [] };
+  const result: AlignmentResult = { offset: { x: 0, y: 0 }, locks: {} };
   if (bypass) return result;
   const scale = Math.max(0.01, zoom);
-  const chosen: { moving: AlignmentAnchor; target: AlignmentAnchor }[] = [];
   for (const axis of ['x', 'y'] as const) {
     const lock = previous[axis];
     const heldMoving = lock && moving.find((m) => m.id === lock.moving && m.axis === axis);
@@ -100,11 +92,6 @@ export function alignAnchors(moving: readonly AlignmentAnchor[], targets: readon
     if (!best) continue;
     result.offset[axis] = best.target.value - best.moving.value;
     result.locks[axis] = { moving: best.moving.id, target: best.target.id };
-    chosen.push(best);
-  }
-  for (const { moving: m, target: t } of chosen) {
-    const offset = result.offset[m.axis === 'x' ? 'y' : 'x'];
-    result.guides.push({ axis: m.axis, value: t.value, from: Math.min(t.from, m.from + offset), to: Math.max(t.to, m.to + offset) });
   }
   return result;
 }

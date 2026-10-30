@@ -8,8 +8,8 @@ describe('weak object alignment', () => {
     const near = { x: 100 + 3.9 / zoom, y: 200 - 3.9 / zoom };
     const result = alignAnchors(pointAnchors('moving', near), targets, zoom);
     expect(alignedPoint(near, near, result)).toEqual({ x: 100, y: 200 });
-    expect(result.guides.map((g) => g.axis)).toEqual(['x', 'y']);
-    expect(alignAnchors(pointAnchors('moving', { x: 100 + 4.1 / zoom, y: 230 }), targets, zoom).guides).toEqual([]);
+    expect(Object.keys(result.locks)).toEqual(['x', 'y']);
+    expect(alignAnchors(pointAnchors('moving', { x: 100 + 4.1 / zoom, y: 230 }), targets, zoom).locks).toEqual({});
   });
   it('holds through minor jitter, releases at seven screen pixels and reacquires independently', () => {
     const targets = pointAnchors('fixed', { x: 100, y: 100 });
@@ -18,7 +18,6 @@ describe('weak object alignment', () => {
     expect(held.locks.x).toEqual(acquired.locks.x);
     const released = alignAnchors(pointAnchors('moving', { x: 107.5, y: 130 }), targets, 1, held.locks);
     expect(released.locks).toEqual({});
-    expect(released.guides).toEqual([]);
     expect(alignAnchors(pointAnchors('moving', { x: 106.5, y: 130 }), targets, 1).locks).toEqual({});
   });
   it('bypasses a held alignment immediately without changing ordinary grid coordinates', () => {
@@ -26,7 +25,7 @@ describe('weak object alignment', () => {
     const targets = pointAnchors('fixed', { x: 100, y: 100 });
     const acquired = alignAnchors(pointAnchors('moving', p), targets, 1);
     const bypassed = alignAnchors(pointAnchors('moving', p), targets, 1, acquired.locks, true);
-    expect(bypassed.guides).toEqual([]);
+    expect(bypassed.locks).toEqual({});
     expect(alignedPoint(p, { x: 104, y: 102 }, bypassed)).toEqual({ x: 104, y: 102 });
   });
   it('lets an exact imported coordinate win over the grid only on the acquired axis', () => {
@@ -48,12 +47,12 @@ describe('weak object alignment', () => {
     expect(result.offset.x).toBe(1);
     expect(alignedPoint({ x: 40, y: 40 }, { x: 40, y: 42 }, result)).toEqual({ x: 41, y: 42 });
   });
-  it('aligns opposite section edges and spans both shapes without changing width or height', () => {
+  it('aligns opposite section edges without changing width or height', () => {
     const fixed = { id: 'fixed', x: 100, y: 20, w: 200, h: 100 };
     const moving = { id: 'moving', x: 297, y: 200, w: 150, h: 90 };
     const result = alignAnchors(sectionAnchors(moving), sectionAnchors(fixed), 1);
     expect(result.offset.x).toBe(3);
-    expect(result.guides).toEqual([{ axis: 'x', value: 300, from: 20, to: 290 }]);
+    expect(result.locks.x).toEqual({ moving: 'section:moving:left', target: 'section:fixed:right' });
     expect(moving).toEqual({ id: 'moving', x: 297, y: 200, w: 150, h: 90 });
   });
   it('drops stale locks when a target or moving anchor disappears', () => {
@@ -61,7 +60,7 @@ describe('weak object alignment', () => {
     const targets = pointAnchors('fixed', { x: 100, y: 100 });
     const acquired = alignAnchors(moving, targets, 1);
     expect(alignAnchors(moving, [], 1, acquired.locks).locks).toEqual({});
-    expect(alignAnchors([], targets, 1, acquired.locks).guides).toEqual([]);
+    expect(alignAnchors([], targets, 1, acquired.locks).locks).toEqual({});
   });
 });
 

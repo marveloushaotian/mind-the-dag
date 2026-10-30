@@ -184,9 +184,8 @@ rounding. Section movement, creation and bottom-right resizing align edges to
 other section edges. Minimum resize dimensions remain enforced, and Alt-drag
 still moves a section's contents by the same translation.
 
-Guides are thin, finite, non-interactive and constant in screen weight. They
-exist only in the editor overlay and disappear on release/cancellation; they
-are never saved or exported. Hold Command/Control to bypass alignment. Drag
+Alignment is felt through the position alone. It adds no guide lines or
+alignment-status popup to the canvas. Hold Command/Control to bypass alignment. Drag
 edits continue to own one undo checkpoint, and Escape restores both the map
 and its preceding history. Alignment positions objects without connecting or
 merging them automatically.
@@ -246,6 +245,68 @@ lanes may close an internal gap, using the same short layout transition. These
 retained ports and orientations are optional version-1 fields and survive
 save/load, copy/paste and undo/redo. Reversing a connection swaps both reference
 ports.
+
+## European sign-in and registration cover
+
+The cover uses 26 geographically placed capitals and major rail hubs, including
+Dublin, Belfast, Manchester, Edinburgh, Prague, Vienna, Budapest, Warsaw, Vilnius,
+Riga and Tallinn. Russia and Ukraine have no stations or routes. Intermediate
+coordinates shape railway corridors without adding decorative station dots.
+The trip starts in Madrid, passes through Barcelona, Paris and northern Europe,
+and ends over Scandinavia, west of Helsinki. The eastern backdrop fades out.
+It plays once in 28 seconds, then remains still. It never fades out or rewinds.
+
+Routes mostly use two to four straight legs with rounded corners. Danish bridge
+approaches and the Stockholm archipelago retain a few necessary extra waypoints.
+Land sections are solid. The same fine dashed stroke marks all sea sections,
+including the Channel Tunnel and sea bridges. Ferry routes are dashed throughout;
+Manchester–Dublin combines solid rail through Holyhead and a dashed Irish Sea
+crossing. Sea boundaries are computed against exterior coastal rings once; inland
+lakes do not turn a railway into a sea link. Dash phase stays fixed while the front
+grows, and adjacent style sections share exact endpoints to avoid gaps.
+Corridor coordinates are generalised illustration guides, not surveyed track or
+service predictions.
+The main references are the [Interrail railway map](https://www.interrail.com/en/plan-your-trip/interrail-railway-map),
+[SNCF's France–Spain route](https://www.sncf-connect.com/fr-be/train/trajet/paris/barcelone),
+[Eurostar's Channel Tunnel](https://www.eurostar.com/uk-en/travel-info/eurostar-experience/the-channel-tunnel),
+[DSB's Hamburg–Denmark corridor](https://www.dsb.dk/trafikinformation/sporfornyelse/k26/),
+[Snälltåget's Hamburg–Copenhagen–Stockholm corridor](https://www.snalltaget.se/en/day-train-hamburg-copenhagen-stockholm),
+[Öresundståg's west-coast route](https://www.oresundstag.se/reseinfo/tidtabeller/)
+and [Viking Line's Baltic ferry routes](https://www.vikingline.com/the-group/viking-line/services/).
+The added regions use [Avanti's British network](https://www.avantiwestcoast.co.uk/travel-information/our-routes/our-route-map),
+[Irish Rail's Enterprise](https://www.irishrail.ie/offer/take-the-enterprise-service-to-belfast),
+[Irish Ferries' Holyhead crossing](https://www.irishferries.com/uk-en/routes-and-times/dublin-holyhead/),
+[DB's Berlin–Warsaw corridor](https://int.bahn.de/en/destinations/berlin/warsaw),
+[LTG Link's Poland connection](https://ltglink.lt/en/vilnius-warsaw-krakow-vilnius)
+and [Vivi's Baltic connections](https://www.vivi.lv/en/information-for-passengers/international-routes/).
+
+Country outlines and cities use the same projection. Finer coastlines and retained
+small islands around Copenhagen and Stockholm keep these cities on displayed land.
+Tests check primary city containment and rail corridors' land coverage; short
+bridge/tunnel crossings are intentional. Rounded corners stay within their
+neighbouring waypoints, avoiding spline overshoot into the sea.
+
+The original example workflow, GitHub/email sign-in card and two-column layout
+remain. The cover uses the editor's Nordic colours and uniform landing/connection
+scale values. A small moving capsule follows the growing line at constant distance
+speed. Labels remain still while station glyphs pulse. A one-time, deterministic
+layout uses actual text widths and reserves space around all station markers.
+It tries nearby left/right/above/below positions before more distant placements.
+City labels never reflow as the camera pans or as a new city appears. The final
+camera is slightly wider, keeping the British and central European branches in
+view while ending over Scandinavia.
+
+One requestAnimationFrame player draws the cover; there are no per-route SVG
+masks, native animation players or per-frame React updates. Land is rasterised
+once, complete route/style paths and a 2× label atlas are cached, and the backing canvas is capped at four
+million pixels and 1.5× pixel density. The player releases its frame callback on
+completion, manual pause, form input or a hidden tab. Reduced motion displays the
+final still. Resize preserves elapsed time. Development-only canvas attributes
+expose drawing cost, frame counts and playback state for verification.
+
+Cloud login discovery must be tested from the server's allowed local origin,
+`http://localhost:5173`; a new port or `127.0.0.1` is a different origin and cannot
+read provider options. The cover does not change account configuration or OAuth.
 
 ## Sources and their application
 

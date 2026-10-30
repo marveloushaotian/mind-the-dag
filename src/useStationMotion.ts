@@ -1,20 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, type RefObject } from 'react';
 import { derive, stationMarker, type Doc } from './model';
 import { reducedMotion } from './motion';
-import { placementFrames } from './placement';
+import { placementFrames, stationPulseFrames } from './placement';
 import type { Pt } from './geometry';
 
 type MotionRequest = { kind: 'place' | 'connect' | 'merge'; id: string; colour?: string; edgeId?: string; lineId?: string; from?: Pt };
 const EASE = 'cubic-bezier(0.2, 0.7, 0.3, 1)';
 const SVG_NS = 'http://www.w3.org/2000/svg';
-
-/** Uniform scale preserves each glyph's identity; hit targets and lines stay put. */
-function frames(kind: 'connect' | 'merge', interruptedScale?: number): Keyframe[] {
-  const stages: [number, number][] = kind === 'merge'
-      ? [[0, 0.82], [0.32, 1.28], [0.62, 0.93], [0.82, 1.04], [1, 1]]
-      : [[0, 0.9], [0.35, 1.2], [0.7, 0.96], [1, 1]];
-  return stages.map(([offset, scale], i) => ({ offset, transform: `scale(${i === 0 && interruptedScale !== undefined ? interruptedScale : scale})`, easing: EASE }));
-}
 
 /** Ephemeral feedback, requested by gestures rather than inferred from document diffs. */
 export function useStationMotion(svg: RefObject<SVGSVGElement | null>, feedback: RefObject<SVGGElement | null>, doc: Doc) {
@@ -60,7 +52,7 @@ export function useStationMotion(svg: RefObject<SVGSVGElement | null>, feedback:
         void a.finished.then(finish, finish);
       };
       const offset = event.from ? { x: event.from.x - station.x, y: event.from.y - station.y } : undefined;
-      track(glyph.animate(event.kind === 'place' ? placementFrames(offset) : frames(event.kind, interruptedScale),
+      track(glyph.animate(event.kind === 'place' ? placementFrames(offset) : stationPulseFrames(event.kind, interruptedScale),
         { duration: event.kind === 'connect' ? 340 : 440, easing: 'linear' }));
       if (event.kind === 'place') {
         const file = svg.current?.querySelector<SVGGElement>(`[data-station-file="${CSS.escape(event.id)}"]`);

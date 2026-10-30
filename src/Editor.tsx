@@ -17,7 +17,7 @@ import { FusionPreview, PlacementGhost, StationHalo } from './CanvasFeedback';
 import { connectionTarget, connectStations, previewStationMerge, snapTarget } from './interaction';
 import { useStationMotion } from './useStationMotion';
 import { useMapLayoutMotion } from './useMapLayoutMotion';
-import { AccountProfileButton } from './AccountProfile';
+import { AccountMenu } from './AccountProfile';
 import { followPlacement } from './placement';
 import { alignedPoint, alignAnchors, bendAtCoordinate, bendCoordinate, pointAnchors, sectionAnchors, stationAlignmentTargets,
   type AlignmentAnchor, type AlignmentLocks } from './alignment';
@@ -964,7 +964,7 @@ export default function Editor({
             }}
           />
         </div>
-        <AccountProfileButton compact />
+        <AccountMenu />
       </header>
 
       {banner}

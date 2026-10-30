@@ -166,7 +166,8 @@ try {
   if (await B.locator('.card-title', { hasText: 'Alpha map' }).count()) throw new Error("Bob can see Alice's personal map");
 
   log('Bob updates his display name and Alice sees it in the group');
-  await B.getByRole('button', { name: 'Account profile', exact: true }).click();
+  await B.getByRole('button', { name: 'Account menu for Bob', exact: true }).click();
+  await B.getByRole('menuitem', { name: 'Account profile', exact: true }).click();
   await B.getByLabel('Display name', { exact: true }).fill('Bob Researcher');
   await B.getByRole('button', { name: 'Save name', exact: true }).click();
   await B.locator('.account-name', { hasText: 'Bob Researcher' }).waitFor();
@@ -204,13 +205,38 @@ try {
   await Dpage.getByRole('dialog', { name: 'Add your display name' }).waitFor();
   if (await Dpage.getByLabel('Display name', { exact: true }).inputValue()) throw new Error('fallback email used as a profile name');
   await Dpage.getByRole('button', { name: 'Not now', exact: true }).click();
-  await Dpage.getByRole('button', { name: 'Account profile', exact: true }).click();
+  await Dpage.getByRole('button', { name: 'Account menu for Your account', exact: true }).click();
+  await Dpage.getByRole('menuitem', { name: 'Account profile', exact: true }).click();
   await Dpage.getByLabel('Display name', { exact: true }).fill('Dana');
   await Dpage.getByRole('button', { name: 'Save name', exact: true }).click();
   await Dpage.locator('.account-name', { hasText: 'Dana' }).waitFor();
   await Dpage.reload();
   await Dpage.locator('.account-name', { hasText: 'Dana' }).waitFor();
   if ((await api(`/api/collections/users/records/${d.id}`, {}, su)).name !== 'Dana') throw new Error('display name not saved');
+
+  log('the editor has the same account menu, with keyboard access and profile editing');
+  await Dpage.getByRole('button', { name: 'New map', exact: true }).click();
+  await Dpage.waitForURL(/#\/cloud\//);
+  await saved(Dpage);
+  const accountMapId = Dpage.url().split('/').at(-1);
+  const accountMenu = Dpage.getByRole('button', { name: 'Account menu for Dana', exact: true });
+  await accountMenu.press('ArrowDown');
+  if (await Dpage.evaluate(() => document.activeElement?.textContent) !== 'Account profile') throw new Error('menu did not focus its first action');
+  await Dpage.getByRole('menuitem', { name: 'Account profile', exact: true }).press('Escape');
+  if (!(await accountMenu.evaluate((el) => el === document.activeElement))) throw new Error('menu did not return focus');
+  await accountMenu.click();
+  await Dpage.getByRole('menuitem', { name: 'Account profile', exact: true }).click();
+  await Dpage.getByLabel('Display name', { exact: true }).fill('Dana Researcher');
+  await Dpage.getByRole('button', { name: 'Save name', exact: true }).click();
+  await Dpage.locator('.account-name', { hasText: 'Dana Researcher' }).waitFor();
+
+  log('signing out from the editor saves the last edit and returns to sign-in');
+  await Dpage.getByLabel('Map title').fill('Saved before signing out');
+  await Dpage.getByRole('button', { name: 'Account menu for Dana Researcher', exact: true }).click();
+  await Dpage.getByRole('menuitem', { name: 'Sign out', exact: true }).click();
+  await Dpage.getByRole('heading', { name: 'Sign in', exact: true }).waitFor();
+  if (await Dpage.locator('.account-menu').count()) throw new Error('account still visible after sign-out');
+  if ((await api(`/api/collections/maps/records/${accountMapId}`, {}, su)).title !== 'Saved before signing out') throw new Error('last edit lost on sign-out');
 
   console.log('e2e passed');
 } catch (e) {

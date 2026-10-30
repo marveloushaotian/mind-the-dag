@@ -36,16 +36,19 @@ const writePending = (id: string, p: Pending | null) => {
 
 // Saves still running after an editor closed; the start page waits for them before listing maps.
 const inflight = new Set<Promise<unknown>>();
+// A route transition can defer the editor cleanup until after sign-out starts.
+const openEditors = new Set<symbol>();
 const track = <T,>(p: Promise<T>) => {
   inflight.add(p);
   void p.finally(() => inflight.delete(p));
   return p;
 };
-/** Resolves once saves from editors that just closed have finished (at most a few seconds). */
+/** Waits for closing editors and their final saves (at most a few seconds). */
 export async function whenSynced(maxMs = 6000): Promise<void> {
   const until = Date.now() + maxMs;
   await new Promise((r) => setTimeout(r, 0)); // let closing editors queue their last edit
-  while (inflight.size && Date.now() < until) await Promise.race([...inflight, new Promise((r) => setTimeout(r, 200))]);
+  while ((openEditors.size || inflight.size) && Date.now() < until)
+    await Promise.race([...inflight, new Promise((r) => setTimeout(r, 200))]);
 }
 
 export function useCloudSync(map: CloudMap) {
@@ -102,11 +105,14 @@ export function useCloudSync(map: CloudMap) {
 
   // Edits left over from an earlier session are sent first.
   useEffect(() => {
+    const editor = Symbol();
+    openEditors.add(editor);
     if (pending.current) timer.current = window.setTimeout(flush, 300);
     const now = () => void flush();
     window.addEventListener('online', now);
     window.addEventListener('pagehide', now);
     return () => {
+      openEditors.delete(editor);
       window.removeEventListener('online', now);
       window.removeEventListener('pagehide', now);
       // Runs after the editor's own last save (child clean-ups come first or last depending on React's order).

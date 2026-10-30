@@ -1,36 +1,76 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { IChevron } from './icons';
 
 /** Dropdown menu: a button that opens a list of actions. */
-export function Menu({ label, icon, items, primary }: { label: string; icon?: ReactNode; primary?: boolean; items: { label: string; onSelect: () => void; hint?: string }[] }) {
+export function Menu({ label, icon, items, primary, className, ariaLabel, disabled }: {
+  label: ReactNode;
+  icon?: ReactNode;
+  primary?: boolean;
+  className?: string;
+  ariaLabel?: string;
+  disabled?: boolean;
+  items: { label: string; onSelect: () => void; hint?: string }[];
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const initialFocus = useRef(0);
+  const id = useId();
   useEffect(() => {
     if (!open) return;
+    const buttons = list.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
+    buttons?.[initialFocus.current === -1 ? buttons.length - 1 : 0]?.focus();
     const close = (e: PointerEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
     window.addEventListener('pointerdown', close);
-    window.addEventListener('keydown', esc);
     return () => {
       window.removeEventListener('pointerdown', close);
-      window.removeEventListener('keydown', esc);
     };
   }, [open]);
   return (
-    <div className="menu" ref={ref}>
-      <button className={primary ? 'primary' : ''} onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open}>
+    <div className={`menu${className ? ` ${className}` : ''}`} ref={ref}
+      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false); }}
+      onKeyDown={(e) => {
+        if (disabled) return;
+        // Menu activation must not also invoke drawing shortcuts in the editor.
+        if (open || e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+        if (e.key === 'Escape' && open) {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen(false);
+          trigger.current?.focus();
+        } else if (['ArrowDown', 'ArrowUp', ...(open ? ['Home', 'End'] : [])].includes(e.key)) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!open) {
+            initialFocus.current = e.key === 'ArrowUp' ? -1 : 0;
+            setOpen(true);
+            return;
+          }
+          const buttons = Array.from(list.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []);
+          const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+          const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1
+            : (current + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+          buttons[next]?.focus();
+        }
+      }}>
+      <button ref={trigger} className={primary ? 'primary' : ''} disabled={disabled}
+        onClick={() => { initialFocus.current = 0; setOpen((o) => !o); }}
+        aria-label={ariaLabel} title={ariaLabel} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}>
         {icon}
         {label}
         <IChevron size={14} />
       </button>
       {open && (
-        <div className="menu-list" role="menu">
+        <div ref={list} id={id} className="menu-list" role="menu" aria-label={ariaLabel}>
           {items.map((it) => (
             <button
               key={it.label}
               role="menuitem"
+              tabIndex={-1}
               onClick={() => {
                 setOpen(false);
+                trigger.current?.focus();
                 it.onSelect();
               }}
             >

@@ -318,7 +318,7 @@ kbd.key { font: inherit; font-size: var(--text-note); line-height: var(--leading
 .modal .note { margin: 0; font-size: var(--text-note); line-height: var(--leading-note); color: var(--muted); }
 .modal .note.warn { color: var(--danger); }
 .viewer { display: grid; grid-template-rows: 52px 1fr; height: 100%; }
-.view-title { font-size: var(--text-title); font-weight: 600; padding: 0 4px; }
+.view-title { font-size: var(--text-title); font-weight: 600; padding: 0 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge { font-size: var(--text-note); line-height: var(--leading-note); color: var(--muted); background: var(--hover); border-radius: 6px; padding: 3px 8px; }
 
 .selection-marquee { fill: #1f6fae10; stroke: var(--focus); }
@@ -339,10 +339,15 @@ button.danger.flush:hover:not(:disabled) { background: transparent; text-decorat
 .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .group-share { display: flex; flex-direction: column; gap: 10px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
 .modal .note.ok { color: var(--accent-ink); align-self: center; }
-.account { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .account-name { font-size: var(--text-body); font-weight: 600; color: var(--ink); max-width: min(220px, 25vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.account-profile { border-color: transparent; background: transparent; padding: 0 8px; min-width: 36px; }
-.account-profile.compact { width: 36px; }
+.account-menu { flex: 0 0 auto; }
+.account-menu > button { border-color: transparent; background: transparent; padding: 0 8px; gap: 8px; }
+.account-menu > button[aria-expanded="true"] { background: var(--hover); }
+.account-menu > button > svg { flex: none; }
+.account-menu > .menu-list { min-width: 192px; max-width: calc(100vw - 24px); }
+.account-menu .menu-list button { min-height: 36px; }
+@media (max-width: 1100px) { .account-menu .account-name { max-width: 120px; } }
+@media (max-width: 800px) { .account-menu .account-name { display: none; } }
 .profile-form input[readonly] { background: var(--hover); color: var(--muted); }
 .modal .profile-hint { margin-top: -14px; }
 .toast.profile-toast { position: fixed; z-index: 60; bottom: 24px; }
@@ -521,4 +526,5 @@ button.subtle:hover:not(:disabled) { color: var(--ink); }
   .app > .topbar .doc-title { flex: 1 1 80px; min-width: 0 !important; max-width: none; }
   .app > .topbar .spacer { display: none; }
   .app > .topbar > .group:last-of-type { margin-left: auto; }
+  .app > .topbar > .account-menu { margin-left: auto; }
 }

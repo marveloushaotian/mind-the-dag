@@ -9,7 +9,7 @@ import { download } from './exporters';
 import { emptyDoc, type Doc } from './model';
 import { docBounds, MetroMap } from './render';
 import CoverBackdrop from './CoverBackdrop';
-import { AccountProfileButton } from './AccountProfile';
+import { AccountMenu } from './AccountProfile';
 import { Modal, SignInCard, SignInDialog } from './dialogs';
 import {
   acceptInvitation,
@@ -29,7 +29,6 @@ import {
   listMyMaps,
   removeMembership,
   renameGroup,
-  signOut,
   updatedMs,
   useMember,
   createSignupLink,
@@ -198,12 +197,7 @@ function Account({ member }: { member: Member | null }) {
   const [signingIn, setSigningIn] = useState(false);
   if (!cloudEnabled) return null;
   return member ? (
-    <div className="account">
-      <AccountProfileButton />
-      <button onClick={signOut}>
-        Sign out
-      </button>
-    </div>
+    <AccountMenu />
   ) : (
     <>
       <button onClick={() => setSigningIn(true)}>

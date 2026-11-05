@@ -44,6 +44,7 @@ export function LeftRail({
   active,
   setActive,
   theme,
+  showTools = true,
 }: {
   doc: Doc;
   update: Update;
@@ -52,6 +53,7 @@ export function LeftRail({
   active: string | null;
   setActive: (id: string) => void;
   theme: ThemeId;
+  showTools?: boolean;
 }) {
   const slots = paletteLines(doc);
   const move = (i: number, by: number) =>
@@ -80,7 +82,7 @@ export function LeftRail({
 
   return (
     <>
-      <nav className="tools" aria-label="Tools">
+      {showTools && <nav className="tools" aria-label="Tools">
         {TOOLS.map(({ id, label, key, Icon }) => (
           <button key={id} className={`tool${tool === id ? ' on' : ''}`} onClick={() => setTool(id)} title={`${label} (${key})`} aria-pressed={tool === id}>
             <Icon />
@@ -88,7 +90,7 @@ export function LeftRail({
             <kbd>{key}</kbd>
           </button>
         ))}
-      </nav>
+      </nav>}
 
       <div className="rail-head">
         <h3>Lines</h3>

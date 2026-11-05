@@ -11,7 +11,8 @@ import { useDocument } from './store';
 import { usePanZoom } from './panzoom';
 import { lineStyle, tints, tokens, type ThemeId } from './tokens';
 import { Menu, Wordmark } from './ui';
-import { ShareDialog, ShortcutsDialog } from './dialogs';
+import { Modal, ShareDialog, ShortcutsDialog } from './dialogs';
+import { CompactTools, DrawingGuidance } from './EditorGuidance';
 import { MORPH } from './motion';
 import { FusionPreview, PlacementGhost, StationHalo } from './CanvasFeedback';
 import { connectionTarget, connectStations, previewStationMerge, snapTarget } from './interaction';
@@ -88,6 +89,8 @@ export default function Editor({
   const [toast, setToast] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches);
+  const [compactPanel, setCompactPanel] = useState<'lines' | 'properties' | null>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const hoveredRef = useRef<string | null>(null);
@@ -100,13 +103,19 @@ export default function Editor({
   const alignmentLocks = useRef<AlignmentLocks>({});
   const dragTargets = useRef<AlignmentAnchor[]>([]);
   const placementTargets = useMemo(() => tool === 'station' ? stationAlignmentTargets(doc) : [], [doc, tool]);
-  const titleRef = useRef<HTMLInputElement>(null);
   const inspectorRef = useRef<HTMLElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const space = useRef(false);
   const lastDown = useRef<{ key: string; at: number } | null>(null);
   const stationMotion = useStationMotion(svgRef, feedbackRef, doc);
   const derived = useMemo(() => derive(doc), [doc]);
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 900px)');
+    const sync = () => { setCompact(query.matches); if (!query.matches) setCompactPanel(null); };
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
 
   const reserveLegend = (d: Doc) => {
     const height = svgRef.current?.getBoundingClientRect().height;
@@ -158,6 +167,7 @@ export default function Editor({
 
   const active = activeLine && doc.lines.some((l) => l.id === activeLine) ? activeLine : doc.lines[0]?.id ?? null;
   const setTool = (t: Tool) => {
+    setCompactPanel(null);
     setToolState(t);
     if (t === 'station') setStationKind('step');
     cancelConnection();
@@ -220,15 +230,6 @@ export default function Editor({
   useLayoutEffect(() => {
     fit();
   }, [fit]);
-  useEffect(() => {
-    const t = window.setTimeout(() => {
-      if (!initial.stations.length && !initial.sections.length) {
-        setToolState('station');
-        titleRef.current?.select();
-      }
-    }, 50);
-    return () => window.clearTimeout(t);
-  }, [fit, initial]);
 
   // ---------------------------------------------------------------- file actions
   // Finishing a rename: a title another map here already has gets the next free number.
@@ -394,7 +395,7 @@ export default function Editor({
       if (mod && e.key.toLowerCase() === 's') {
         // Maps save themselves; ⌘S just confirms it.
         e.preventDefault();
-        flash('All changes are saved in this browser');
+        flash(place.kind === 'local' ? 'Your map saves automatically in this browser.' : 'Your map saves automatically. Check the save status above.');
         return;
       }
       if (!typing && !mod && e.key === '?') {
@@ -523,6 +524,12 @@ export default function Editor({
       return;
     }
     const h = hit(e.target);
+    // On touch screens, dragging empty space moves the canvas; drawing tools keep their explicit gesture.
+    if (e.pointerType === 'touch' && tool === 'select' && !h) {
+      clearPointer();
+      setDrag({ kind: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y });
+      return;
+    }
     setMergeTargetId(null);
     mergeTargetRef.current = null;
 
@@ -843,13 +850,14 @@ export default function Editor({
   // Rename and property edits share one field in the inspector.
   useLayoutEffect(() => {
     if (!renameTarget) return;
+    if (compact && compactPanel !== 'properties') { setCompactPanel('properties'); return; }
     if (selected.has(`station:${renameTarget}`)) {
       const field = inspectorRef.current?.querySelector<HTMLTextAreaElement>('[aria-label="Station name"]');
       field?.focus();
       field?.select();
     }
     setRenameTarget(null);
-  }, [renameTarget, selected]);
+  }, [renameTarget, selected, compact, compactPanel]);
 
   const pendingStation = pending ? derived.byId.get(pending) ?? null : null;
   const hoveredStation = hoveredId ? derived.byId.get(hoveredId) ?? null : null;
@@ -885,8 +893,14 @@ export default function Editor({
     return { id: e.id, A: g.centre[0], B: g.centre[3], axis: A.axis, at: { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 } };
   }, [selected, doc]);
   const selectedSections = useMemo(() => doc.sections.filter((s) => selected.has(`section:${s.id}`)), [doc.sections, selected]);
-  const empty = doc.stations.length === 0 && doc.sections.length === 0;
   const dark = theme === 'dark';
+  const selectedLine = doc.lines.find((line) => line.id === active) ?? null;
+  const inspector = <Inspector doc={doc} update={update} selected={selected} theme={theme} setTheme={setTheme}
+    onDelete={() => { deleteSelection(); setCompactPanel(null); }}
+    placement={tool === 'station' ? { kind: stationKind, setKind: setStationKind } : undefined} />;
+  const saveIndicator = saveState ?? <span className="save-state" title="Maps are saved automatically in this browser">
+    {savedDoc === doc ? compact ? 'Saved in this browser' : 'Saved' : 'Saving…'}
+  </span>;
 
   return (
     <div className={`app${dark ? ' dark' : ''}`}>
@@ -896,7 +910,6 @@ export default function Editor({
         </button>
         <span className="divider" aria-hidden="true" />
         <input
-          ref={titleRef}
           className="doc-title"
           value={doc.title}
           onChange={(e) => update((d) => void (d.title = e.target.value), 'title')}
@@ -913,11 +926,7 @@ export default function Editor({
             {place.groupName}
           </span>
         )}
-        {saveState ?? (
-          <span key={savedDoc === doc ? 'saved' : 'saving'} className="save-state" title="Maps are saved automatically in this browser">
-            {savedDoc === doc ? 'Saved' : 'Saving…'}
-          </span>
-        )}
+        {!compact && saveIndicator}
         <div className="group">
           <button className="icon" onClick={undoEdit} disabled={!store.canUndo} title="Undo (⌘Z)" aria-label="Undo">
             <IUndo />
@@ -968,10 +977,14 @@ export default function Editor({
       </header>
 
       {banner}
+      {compact && <CompactTools doc={doc} tool={tool} active={selectedLine} theme={theme} stationKind={stationKind}
+        saveState={saveIndicator}
+        setTool={setTool} setStationKind={setStationKind} propertiesOpen={compactPanel === 'properties'}
+        onLines={() => setCompactPanel('lines')} onProperties={() => setCompactPanel('properties')} />}
       <div className="body">
-        <aside className="panel left">
+        {!compact && <aside className="panel left">
           <LeftRail doc={doc} update={update} tool={tool} setTool={setTool} active={active} setActive={selectLine} theme={theme} />
-        </aside>
+        </aside>}
 
         <main
           className="stage"
@@ -1041,24 +1054,10 @@ export default function Editor({
             </g>
           </svg>
 
-          {empty && (
-            <div className="empty">
-              {tool === 'station' ? 'Click to place stations. Connect them when you’re ready.' : (
-                <>
-                  Press <kbd>S</kbd> and click to place stations
-                </>
-              )}
-            </div>
-          )}
-
-          {mergeTarget && <div className="canvas-hint" role="status">Release to merge into {mergeTarget.label || 'this station'}</div>}
-
-          {!empty && (tool === 'station' || tool === 'line') && (
-            <div className="canvas-hint">
-              <span>{tool === 'station' ? 'Click to place a station' : pendingStation ? hoveredStation ? candidate ? 'Click to connect' : 'Already connected · Click to continue' : 'Approach another station to preview' : 'Click a station to start'}</span>
-              <span className="hint-key">Esc {tool === 'station' ? 'to select' : 'to finish'}</span>
-            </div>
-          )}
+          {mergeTarget && <div className="drawing-guidance" role="status">Release to merge into {mergeTarget.label || 'this station'}</div>}
+          {!mergeTarget && <DrawingGuidance doc={doc} tool={tool} selected={selected} source={pendingStation} active={selectedLine}
+            target={hoveredStation ? candidate ? 'connect' : 'already' : 'none'} compact={compact} onTool={setTool}
+            onExample={() => { replace(metagenomeExample()); setTool('select'); requestAnimationFrame(fit); }} />}
 
           <div className="float left-bottom">
             <button className="bare" onClick={() => setHelp(true)} aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">
@@ -1084,12 +1083,17 @@ export default function Editor({
           )}
         </main>
 
-        <aside className={`panel right${tool === 'station' || selected.size ? ' contextual' : ''}`} ref={inspectorRef}>
-          <button className="inspector-dismiss" onClick={() => setTool('select')} aria-label="Close properties">Close</button>
-          <Inspector doc={doc} update={update} selected={selected} theme={theme} setTheme={setTheme} onDelete={deleteSelection}
-            placement={tool === 'station' ? { kind: stationKind, setKind: setStationKind } : undefined} />
-        </aside>
+        {!compact && <aside className="panel right" ref={inspectorRef}>{inspector}</aside>}
       </div>
+
+      {compact && compactPanel && <Modal title={compactPanel === 'lines' ? 'Lines and colours' : selected.size ? 'Selection properties' : tool === 'station' ? 'Station type' : 'Map settings'}
+        onClose={() => setCompactPanel(null)} width={380}>
+        <div className="compact-editor-panel" ref={compactPanel === 'properties' ? (element) => { inspectorRef.current = element; } : undefined}>
+          {compactPanel === 'lines' ? <LeftRail doc={doc} update={update} tool={tool} setTool={setTool} active={active} theme={theme} showTools={false}
+            setActive={selectLine} /> : inspector}
+        </div>
+        <button onClick={() => setCompactPanel(null)}>Back to canvas</button>
+      </Modal>}
 
       {help && <ShortcutsDialog onClose={() => setHelp(false)} />}
       {sharing && <ShareDialog doc={doc} place={place} onMoveToCloud={onMoveToCloud} onClose={() => setSharing(false)} />}

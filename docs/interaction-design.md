@@ -3,6 +3,38 @@
 These are product decisions for this editor, informed by the primary sources
 below. The book reference is an author-published excerpt, not a full-book review.
 
+## Independent first use
+
+A blank map starts in Select with two explicit actions: Add stations and Use an
+example. It does not focus the title, summon a mobile keyboard or open properties
+automatically. The example replaces the current drawing as one undoable action;
+it does not create a second map or change the map's storage location.
+
+Contextual guidance follows the actual drawing: place the first station, add a
+second, connect them, then select a station to name it. Drawing tools have a
+visible Done action. There is no mandatory tour or tutorial progress stored in
+the document. The workspace explains blank versus editable example maps,
+automatic saving, private maps and group copies where those choices occur.
+
+At 900 px or less, four labelled drawing tools remain visible above the canvas,
+along with Lines, Properties and the save status. Properties opens only when
+requested; double-pressing a station opens its existing name field. Compact
+dialogs reuse the desktop controls and have a Back to canvas action. Desktop
+rails and compact dialogs never render duplicate property editors. Switching
+to desktop closes the compact panel without changing the drawing.
+
+Dragging blank canvas with touch in Select pans the view; mouse dragging still
+selects an area. Station and Section retain their explicit placement gestures.
+Zoom buttons and Fit remain visible. This does not implement pinch zoom.
+Nested colour popovers consume Escape before their containing dialog, and their
+horizontal position is clamped inside narrow viewports.
+
+Verification covers ten editor interaction tests, including the first connected
+map, property editing, undo, nested Escape, responsive control ownership and
+touch versus mouse gestures. Chrome responsive checks also exercise drawing,
+custom line and section colours, export feedback and 320 px toolbar containment.
+These checks do not replace physical-device or first-time participant testing.
+
 ## One owner for each control
 
 - Left: choose a tool or the active line. Clicking a line's swatch or name has

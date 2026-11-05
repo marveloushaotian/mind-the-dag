@@ -322,9 +322,10 @@ function LocalHome({ onOpen, onCreate, onBack }: { onOpen: (id: string) => void;
           }}
         />
         <button className="link" onClick={() => onCreate(metagenomeExample())}>
-          Example map
+          Try an editable example
         </button>
       </div>
+      {!maps.length && <div className="home-empty-intro"><h1>No maps yet</h1><p>Choose New map to start from a blank canvas, or try an example you can change. Your work saves automatically in this browser.</p></div>}
       {notice && <p className="home-notice">{notice}</p>}
       {maps.length > 0 && <LocalDrafts maps={maps} onOpen={onOpen} onChange={() => setMaps(listMaps())} />}
     </main>
@@ -623,7 +624,7 @@ function Workspace({
               }}
             />
             <button className="link" onClick={() => onCreate(metagenomeExample(), groupId)}>
-              Example map
+              Try an editable example
             </button>
           </div>
         )}
@@ -675,9 +676,11 @@ function Workspace({
               ))}
             </ul>
           )) : maps.length === 0 ? (
-            <p className="home-hint pad">
-              {section === 'mine' ? 'No maps yet. Start a new one above.' : 'No maps in this group yet. Make one here, or copy one in from My maps.'}
-            </p>
+            <div className="home-empty-intro">
+              <h2>{section === 'mine' ? 'No maps yet' : 'No maps in this group yet'}</h2>
+              <p>{section === 'mine' ? 'Choose New map to start from a blank canvas, or try an example you can change. Your work saves automatically and stays private in My maps.' : 'Create a map here, or copy one from My maps. Everyone in this group can view and edit the group copy.'}</p>
+              {section === 'mine' && <p>Working with colleagues? Choose New group beside Groups to start a shared workspace.</p>}
+            </div>
           ) : (
             <ul className="cards">
               {maps.map((m) => {

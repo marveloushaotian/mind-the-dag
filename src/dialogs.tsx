@@ -55,10 +55,10 @@ export function Modal({ title, onClose, children, width = 420, bare, dismissible
     const contain = (e: FocusEvent) => {
       if (modalStack.at(-1) === dialog && !dialog.contains(e.target as Node)) dialog.focus();
     };
-    window.addEventListener('keydown', k, true);
+    window.addEventListener('keydown', k);
     document.addEventListener('focusin', contain);
     return () => {
-      window.removeEventListener('keydown', k, true);
+      window.removeEventListener('keydown', k);
       document.removeEventListener('focusin', contain);
       const wasTop = modalStack.at(-1) === dialog;
       modalStack.splice(modalStack.indexOf(dialog), 1);

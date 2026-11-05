@@ -101,7 +101,9 @@ export function Popover({ trigger, children, label, placement = 'bottom' }: { tr
   const toggle = () => {
     if (open) return setPos(null);
     const r = btn.current!.getBoundingClientRect();
-    setPos(placement === 'top' ? { left: r.left, bottom: window.innerHeight - r.top + 8 } : { left: r.left, top: r.bottom + 6 });
+    const width = Math.min(280, window.innerWidth - 32);
+    const left = Math.max(16, Math.min(r.left, window.innerWidth - width - 16));
+    setPos(placement === 'top' ? { left, bottom: window.innerHeight - r.top + 8 } : { left, top: r.bottom + 6 });
   };
   return (
     <div className="popover-anchor" ref={ref} onKeyDown={(e) => {

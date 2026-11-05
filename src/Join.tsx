@@ -78,8 +78,8 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
               {info.valid
                 ? `${info.uses ?? 0} of ${info.maxUses ?? 1} ${(info.maxUses ?? 1) === 1 ? 'place' : 'places'} used`
                 : info.reason === 'expired'
-                  ? 'Expired: make a new one under Invite people.'
-                  : 'All places used: make a new one under Invite people.'}
+                  ? 'Expired: make a new one under Invite to mind-the-dag.'
+                  : 'All places used: make a new one under Invite to mind-the-dag.'}
             </p>
             <div className="join-actions">
               <button

@@ -135,7 +135,7 @@ try {
   await A.getByRole('button', { name: 'Create group' }).click();
   const gd = A.getByRole('dialog', { name: 'Lab' });
   await gd.getByLabel('Email address to invite').fill('Bob@Example.test');
-  await gd.getByRole('button', { name: 'Invite' }).click();
+  await gd.getByRole('button', { name: 'Invite', exact: true }).click();
   await gd.getByText('bob@example.test', { exact: true }).waitFor();
   await gd.getByRole('button', { name: 'Close' }).click();
 

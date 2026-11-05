@@ -3,8 +3,8 @@
  * every member's own maps ("My maps"), groups they belong to, and invitations.
  * Signed out (or without a configured server) the app keeps maps in this browser only.
  */
-import PocketBase, { ClientResponseError, LocalAuthStore, type RecordModel } from 'pocketbase';
-import { useSyncExternalStore } from 'react';
+import PocketBase, { BaseAuthStore, ClientResponseError, LocalAuthStore, type RecordModel } from 'pocketbase';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { transition } from './motion';
 import { uniqueTitle, type Doc } from './model';
 
@@ -107,22 +107,75 @@ export async function signInProviders(): Promise<Provider[]> {
   if (!pb) return [];
   try {
     const m = await pb.collection('users').listAuthMethods();
-    return m.oauth2.enabled ? m.oauth2.providers.map((p) => p.name).filter((n): n is Provider => n === 'github' || n === 'google') : [];
-  } catch {
-    return [];
+    const configured = new Set(m.oauth2.enabled ? m.oauth2.providers.map((p) => p.name) : []);
+    return (['github', 'google'] as const).filter((provider) => configured.has(provider));
+  } catch (e) {
+    throw new Error(explain(e, 'Could not load sign-in options. Please try again.'));
   }
+}
+
+/** Failed discovery remains retryable instead of hiding social sign-in. */
+export function useSignInProviders() {
+  const [providers, setProviders] = useState<Provider[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt((value) => value + 1), []);
+  useEffect(() => {
+    let live = true;
+    setProviders(null); setError(null);
+    void signInProviders().then((value) => { if (live) setProviders(value); }, (e) => {
+      if (live) { setProviders([]); setError(explain(e)); }
+    });
+    return () => { live = false; };
+  }, [attempt]);
+  return { providers, error, retry };
 }
 
 /** "GitHub", "GitHub or Google", … for instructions shown to people. */
 export const providerNames = (p: Provider[]) => p.map((x) => PROVIDER_LABEL[x]).join(' or ') || 'GitHub';
 
+let pendingSocialSignIn: PocketBase | null = null;
+
+/** A fresh session prevents sign-in from implicitly linking to another signed-in account. */
+async function authenticateWithProvider(provider: Provider, createData?: { inviteCode: string }) {
+  if (pendingSocialSignIn) throw new Error('A sign-in window is already open. Complete or cancel it first.');
+  if (currentMember()) throw new Error('You are already signed in. Sign out before choosing another account.');
+  const c = client();
+  const popup = window.open('about:blank', '_blank', 'popup,width=520,height=720');
+  if (!popup) throw new Error(`Allow pop-ups for this site, then try ${PROVIDER_LABEL[provider]} again.`);
+  const auth = new PocketBase(c.baseURL, new BaseAuthStore());
+  pendingSocialSignIn = auth;
+  try {
+    const result = await auth.collection('users').authWithOAuth2({
+      provider, ...(createData ? { createData } : {}), requestKey: 'social-sign-in',
+      urlCallback: (url) => {
+        if (popup.closed) throw new ClientResponseError({ isAbort: true });
+        popup.location.href = url;
+      },
+    });
+    if (currentMember()) throw new Error('Another account signed in while this window was open. Your current account has not changed.');
+    c.authStore.save(result.token, result.record);
+    return result;
+  } finally {
+    pendingSocialSignIn = null;
+    auth.cancelAllRequests();
+    popup.close();
+  }
+}
+
+/** Also releases a pending sign-in when the popup was closed without a redirect. */
+export function cancelSocialSignIn(): void {
+  pendingSocialSignIn?.cancelRequest('social-sign-in');
+}
+
 export async function signInWith(provider: Provider): Promise<void> {
   try {
-    await client().collection('users').authWithOAuth2({ provider });
+    await authenticateWithProvider(provider);
   } catch (e) {
-    if (e instanceof ClientResponseError && e.status === 400)
-      throw new Error(`No account is linked to this ${PROVIDER_LABEL[provider]} account yet. New people join through an invitation link from the admin.`);
     if (e instanceof ClientResponseError && e.isAbort) throw new Error('Sign-in was cancelled.');
+    if (e instanceof ClientResponseError && /access_denied/.test(String(e.originalError))) throw new Error('Sign-in was cancelled.');
+    if (e instanceof ClientResponseError && e.status === 400)
+      throw new Error(`${PROVIDER_LABEL[provider]} sign-in could not be completed. Try again; if you are new here, open an invitation link from the admin.`);
     throw new Error(explain(e));
   }
 }
@@ -401,16 +454,18 @@ export async function signUpWithPassword(code: string, name: string, email: stri
   }
   await signIn(email, password);
 }
-/** Sign up (or, with an existing account, sign in and join) through GitHub. */
+/** Sign up (or, with an existing account, sign in and join) through a social provider. */
 export async function signUpWith(provider: Provider, code: string): Promise<void> {
   let isNew = false;
   try {
-    const r = await client().collection('users').authWithOAuth2({ provider, createData: { inviteCode: code } });
+    const r = await authenticateWithProvider(provider, { inviteCode: code });
     isNew = !!(r.meta as { isNew?: boolean } | undefined)?.isNew;
   } catch (e) {
-    if (e instanceof ClientResponseError && e.status === 400) throw new Error('This invitation link is no longer valid. Ask the admin for a new one.');
     if (e instanceof ClientResponseError && e.isAbort) throw new Error('Sign-in was cancelled.');
+    if (e instanceof ClientResponseError && /access_denied/.test(String(e.originalError))) throw new Error('Sign-in was cancelled.');
+    if (e instanceof ClientResponseError && e.status === 400)
+      throw new Error(`${PROVIDER_LABEL[provider]} sign-up could not be completed. Try again, or ask the admin to check your invitation link.`);
     throw new Error(explain(e));
   }
-  if (!isNew) await acceptSignupLink(code).catch(() => undefined);
+  if (!isNew) await acceptSignupLink(code);
 }

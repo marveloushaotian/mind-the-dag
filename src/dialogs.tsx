@@ -3,8 +3,10 @@ import { reducedMotion } from './motion';
 import { IClose } from './icons';
 import type { Doc } from './model';
 import { shareUrl } from './share';
-import { cloudEnabled, createCloudMap, explain, listMyGroups, PROVIDER_LABEL, signIn, signInProviders, signInWith, useMember, type Group, type Provider } from './cloud';
+import { cancelSocialSignIn, cloudEnabled, createCloudMap, explain, listMyGroups, PROVIDER_LABEL, signIn, signInWith, useMember, useSignInProviders, type Group, type Provider } from './cloud';
 import type { Place } from './Editor';
+import githubMark from './brand/github-mark-white.svg';
+import googleMark from './brand/google-mark.png';
 
 export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = isMac ? '⌘' : 'Ctrl';
@@ -135,24 +137,21 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-// Official marks dropped into src/brand/ (see README there) are used on the sign-in buttons.
-const BRAND = import.meta.glob<string>('./brand/*.svg', { eager: true, query: '?url', import: 'default' });
-const markFor = (p: Provider) => BRAND[`./brand/${p}-mark-white.svg`];
+// Official marks are bundled locally; missing assets fail the build.
+const PROVIDER_MARK: Record<Provider, string> = { github: githubMark, google: googleMark };
 const invitationEmail = `mailto:haotian.zheng@helsinki.fi?${new URLSearchParams({
   subject: 'Mind the DAG — Invitation request',
   body: 'Hello Haotian,\r\n\r\nI would like to request an invitation to Mind the DAG.\r\n\r\nName: \r\nInstitution / affiliation: \r\nIntended use: \r\n\r\nThank you!',
 }).toString().replace(/\+/g, '%20')}`;
 
-/** Sign-in options side by side in weight: GitHub, or the email and password of your account. */
+/** Offer every configured social provider alongside the account's email/password. */
 export function SignInCard({ onDone, autoFocus, title = 'Sign in', sub = 'Your maps in the cloud, and the groups you work in.', foot = true }: { onDone?: () => void; autoFocus?: boolean; title?: string; sub?: string; foot?: boolean }) {
-  const [providers, setProviders] = useState<Provider[] | null>(null);
+  const { providers, error: providerError, retry: retryProviders } = useSignInProviders();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    void signInProviders().then(setProviders);
-  }, []);
+  useEffect(() => () => cancelSocialSignIn(), []);
   const run = async (what: string, fn: () => Promise<void>) => {
     setBusy(what);
     setError(null);
@@ -169,9 +168,12 @@ export function SignInCard({ onDone, autoFocus, title = 'Sign in', sub = 'Your m
       <h2>{title}</h2>
       {sub && <p className="signin-sub">{sub}</p>}
       {providers === null && <div className="signin-skeleton" aria-hidden="true" />}
+      {providerError && <p className="note warn" role="alert">{providerError}{' '}
+        <button type="button" className="link inline" onClick={retryProviders}>Reload sign-in options</button></p>}
       {providers?.map((p) => (
         <OAuthButton key={p} provider={p} busy={busy === p} disabled={!!busy} onClick={() => void run(p, () => signInWith(p))} />
       ))}
+      {busy && busy !== 'password' && <button type="button" className="link signin-alt" onClick={cancelSocialSignIn}>Cancel sign-in</button>}
       {!!providers?.length && (
         <div className="signin-or" role="separator">
           <span>or</span>
@@ -196,23 +198,27 @@ export function SignInCard({ onDone, autoFocus, title = 'Sign in', sub = 'Your m
           {busy === 'password' ? 'Signing in…' : 'Sign in with email'}
         </button>
       </form>
-      {error && <p className="note warn">{error}</p>}
+      {error && <p className="note warn" role="alert">{error}</p>}
       {foot && (
         <p className="signin-foot">
           <strong>Invite only.</strong> New here?{' '}
           <a href={invitationEmail}>Request an invitation</a>.
         </p>
       )}
+      <PrivacyLink />
     </div>
   );
 }
 
+export function PrivacyLink() {
+  return <p className="signin-privacy"><a href={`${import.meta.env.BASE_URL}privacy.html`} target="_blank" rel="noopener">Privacy notice</a></p>;
+}
+
 export function OAuthButton({ provider, busy, disabled, onClick, label }: { provider: Provider; busy?: boolean; disabled?: boolean; onClick: () => void; label?: string }) {
-  const mark = markFor(provider);
   return (
-    <button className={`btn-oauth btn-${provider}`} disabled={disabled} onClick={onClick}>
-      {mark && <img src={mark} alt="" width={20} height={20} />}
-      {busy ? `Waiting for ${PROVIDER_LABEL[provider]}…` : (label ?? `Continue with ${PROVIDER_LABEL[provider]}`)}
+    <button type="button" className={`btn-oauth btn-${provider}`} disabled={disabled || busy} aria-busy={busy || undefined} onClick={onClick}>
+      <img className="oauth-mark" src={PROVIDER_MARK[provider]} alt="" width={20} height={20} aria-hidden="true" />
+      <span>{busy ? `Waiting for ${PROVIDER_LABEL[provider]}…` : (label ?? `Continue with ${PROVIDER_LABEL[provider]}`)}</span>
     </button>
   );
 }

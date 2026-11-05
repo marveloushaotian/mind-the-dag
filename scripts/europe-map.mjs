@@ -23,24 +23,31 @@ if (!response.ok) throw new Error(`City dataset: ${response.status}`);
 const places = (await response.json()).features;
 const names = ['Madrid', 'Barcelona', 'Paris', 'London', 'Manchester', 'Edinburgh', 'Dublin', 'Belfast',
   'Brussels', 'Amsterdam', 'Cologne', 'Hamburg', 'Berlin', 'Prague', 'Vienna', 'Budapest', 'Warsaw',
-  'Vilnius', 'Riga', 'Tallinn', 'Copenhagen', 'Malmö', 'Gothenburg', 'Oslo', 'Stockholm', 'Helsinki'];
-const aliases = { Gothenburg: 'Göteborg', Cologne: 'Köln', Copenhagen: 'København' };
+  'Vilnius', 'Riga', 'Tallinn', 'Copenhagen', 'Malmö', 'Gothenburg', 'Oslo', 'Stockholm', 'Helsinki',
+  'Lisbon', 'Porto', 'Luxembourg', 'Bern', 'Milan', 'Venice', 'Rome', 'Naples', 'Valletta',
+  'Ljubljana', 'Zagreb', 'Sarajevo', 'Belgrade', 'Podgorica', 'Tirana', 'Skopje',
+  'Thessaloniki', 'Athens', 'Sofia', 'Bucharest', 'Bratislava', 'Chisinau', 'Istanbul', 'Nicosia',
+  'Munich', 'Frankfurt', 'Stuttgart', 'Hanover', 'Leipzig', 'Dresden', 'Nuremberg', 'Bremen',
+  'Zurich', 'Basel', 'Geneva', 'Salzburg', 'Innsbruck', 'Graz', 'Linz',
+  'Lyon', 'Marseille', 'Bordeaux', 'Strasbourg', 'Turin', 'Bologna', 'Florence',
+  'Valencia', 'Seville', 'Wroclaw', 'Krakow', 'Gdansk', 'Turku', 'Tampere', 'Bergen'];
+const aliases = { Gothenburg: 'Göteborg', Cologne: 'Köln', Copenhagen: 'København', Nuremberg: 'Nürnberg' };
 const cities = names.map((name) => {
   const city = places.find(({ properties: p, geometry }) => {
     const [lon, lat] = geometry.coordinates;
-    return lon > -12 && lon < 30 && lat > 35 && lat < 70
-      && (p.name === name || p.namepar === name || p.name === aliases[name]);
+    return lon > -12 && lon < 36 && lat > 35 && lat < 70
+      && (p.name === name || p.namepar === name || p.nameascii === name || p.name === aliases[name]);
   });
   if (!city) throw new Error(`Missing city: ${name}`);
   const [x, y] = P(city.geometry.coordinates).map(r1);
-  return { id: name === 'Malmö' ? 'malmo' : name.toLowerCase(), name, coordinates: city.geometry.coordinates, x, y, capital: city.properties.adm0cap === 1 };
+  return { id: name === 'Malmö' ? 'malmo' : name.toLowerCase(), name, country: city.properties.adm0name, coordinates: city.geometry.coordinates, x, y, capital: city.properties.adm0cap === 1 };
 });
-// Resolve capital-city islands that the 1:50m coastline cannot represent.
+// Keep islands, estuaries and coastal city centres on the displayed land.
 const coastSource = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_countries.geojson';
 const coastResponse = await fetch(coastSource);
 if (!coastResponse.ok) throw new Error(`Coastline dataset: ${coastResponse.status}`);
 const fineCoasts = new Map((await coastResponse.json()).features
-  .filter((f) => ['Denmark', 'Sweden'].includes(f.properties.ADMIN))
+  .filter((f) => ['Denmark', 'Sweden', 'Portugal', 'Turkey', 'Malta', 'Italy', 'Cyprus'].includes(f.properties.ADMIN))
   .map((f) => [f.properties.ADMIN, f.geometry]));
 
 // --- clip a ring to the frame (Sutherland-Hodgman), then simplify (Douglas-Peucker)
@@ -95,7 +102,7 @@ for (const f of land.features) {
   for (const poly of polys)
     for (const ring of poly) {
       // Keep Europe and the surrounding coasts for geographical context.
-      if (!ring.some(([lon, lat]) => lon > -14 && lon < 31 && lat > 35 && lat < 72)) continue;
+      if (!ring.some(([lon, lat]) => lon > -14 && lon < 36 && lat > 34 && lat < 72)) continue;
       // unwrap the antimeridian (Russia's far east) so it falls outside the frame
       const projected = clip(ring.map(([lon, lat]) => P([lon < -100 ? lon + 360 : lon, lat])));
       const nearCity = cities.some((city) => projected.some(([x, y]) => Math.hypot(x - city.x, y - city.y) < 12));

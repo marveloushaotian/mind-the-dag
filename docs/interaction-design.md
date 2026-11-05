@@ -248,53 +248,69 @@ ports.
 
 ## European sign-in and registration cover
 
-The cover uses 26 geographically placed capitals and major rail hubs, including
-Dublin, Belfast, Manchester, Edinburgh, Prague, Vienna, Budapest, Warsaw, Vilnius,
-Riga and Tallinn. Russia and Ukraine have no stations or routes. Intermediate
-coordinates shape railway corridors without adding decorative station dots.
-The trip starts in Madrid, passes through Barcelona, Paris and northern Europe,
-and ends over Scandinavia, west of Helsinki. The eastern backdrop fades out.
-It plays once in 28 seconds, then remains still. It never fades out or rewinds.
+The cover uses 80 geographically placed capitals and regional hubs, connected by
+80 illustrative links. It includes Iberia, Italy, Malta, Greece, Cyprus and the
+Balkans as well as western, central and northern Europe. Germany has 11 nodes,
+Switzerland four and Austria five; regional hubs also fill France, Italy, Spain,
+Poland and Finland. Each city has one incoming branch except Helsinki, which
+retains both sea approaches. Redundant bypasses and regional loops are omitted,
+including the old Cologne–Berlin link that overlapped the Hanover branch. Russia and Ukraine have no stations or routes. This remains
+a representative network, not an exhaustive list of European countries or cities.
 
-Routes mostly use two to four straight legs with rounded corners. Danish bridge
-approaches and the Stockholm archipelago retain a few necessary extra waypoints.
-Land sections are solid. The same fine dashed stroke marks all sea sections,
-including the Channel Tunnel and sea bridges. Ferry routes are dashed throughout;
-Manchester–Dublin combines solid rail through Holyhead and a dashed Irish Sea
-crossing. Sea boundaries are computed against exterior coastal rings once; inland
-lakes do not turn a railway into a sea link. Dash phase stays fixed while the front
-grows, and adjacent style sections share exact endpoints to avoid gaps.
-Corridor coordinates are generalised illustration guides, not surveyed track or
-service predictions.
-The main references are the [Interrail railway map](https://www.interrail.com/en/plan-your-trip/interrail-railway-map),
-[SNCF's France–Spain route](https://www.sncf-connect.com/fr-be/train/trajet/paris/barcelone),
-[Eurostar's Channel Tunnel](https://www.eurostar.com/uk-en/travel-info/eurostar-experience/the-channel-tunnel),
-[DSB's Hamburg–Denmark corridor](https://www.dsb.dk/trafikinformation/sporfornyelse/k26/),
-[Snälltåget's Hamburg–Copenhagen–Stockholm corridor](https://www.snalltaget.se/en/day-train-hamburg-copenhagen-stockholm),
-[Öresundståg's west-coast route](https://www.oresundstag.se/reseinfo/tidtabeller/)
-and [Viking Line's Baltic ferry routes](https://www.vikingline.com/the-group/viking-line/services/).
-The added regions use [Avanti's British network](https://www.avantiwestcoast.co.uk/travel-information/our-routes/our-route-map),
-[Irish Rail's Enterprise](https://www.irishrail.ie/offer/take-the-enterprise-service-to-belfast),
-[Irish Ferries' Holyhead crossing](https://www.irishferries.com/uk-en/routes-and-times/dublin-holyhead/),
-[DB's Berlin–Warsaw corridor](https://int.bahn.de/en/destinations/berlin/warsaw),
-[LTG Link's Poland connection](https://ltglink.lt/en/vilnius-warsaw-krakow-vilnius)
-and [Vivi's Baltic connections](https://www.vivi.lv/en/information-for-passengers/international-routes/).
+Country outlines and city coordinates share one projection. The generator records
+each city's source country and uses pinned Natural Earth v5.1.2 coordinates.
+Finer Danish, Swedish, Portuguese, Turkish, Italian, Maltese and Cypriot coasts
+keep islands and coastal city centres on the displayed land. Tests check every
+city's land containment, network reachability and regional coverage.
 
-Country outlines and cities use the same projection. Finer coastlines and retained
-small islands around Copenhagen and Stockholm keep these cities on displayed land.
-Tests check primary city containment and rail corridors' land coverage; short
-bridge/tunnel crossings are intentional. Rounded corners stay within their
-neighbouring waypoints, avoiding spline overshoot into the sea.
+Connections use the editor's `routeCentre` router: straight legs are horizontal,
+vertical or 45°. Candidate paths favour few bends, proximity to geographical
+guides and the appropriate land/sea surface. Short retraced legs are removed.
+Circular bends use the same 40 px / 32 px radii as the editor, clamped on short
+segments and reduced where a corner would cut a bay or island. Intermediate
+waypoints shape corridors without adding station dots.
+Tests check angles, turn direction, circular radii and land coverage.
 
-The original example workflow, GitHub/email sign-in card and two-column layout
-remain. The cover uses the editor's Nordic colours and uniform landing/connection
-scale values. A small moving capsule follows the growing line at constant distance
-speed. Labels remain still while station glyphs pulse. A one-time, deterministic
-layout uses actual text widths and reserves space around all station markers.
-It tries nearby left/right/above/below positions before more distant placements.
-City labels never reflow as the camera pans or as a new city appears. The final
-camera is slightly wider, keeping the British and central European branches in
-view while ending over Scandinavia.
+Land sections are solid; the same fine dashed stroke marks sea sections,
+including bridges, tunnels and island connections. Sea boundaries are computed
+against exterior coastal rings once, so inland lakes do not turn land connections
+into sea links. Dash phase stays fixed while a route grows, and adjacent style
+sections share exact endpoints. The network is a geographical workflow
+illustration, not surveyed railway track or a claim about current train/ferry
+services. The [Interrail map](https://www.interrail.com/en/plan-your-trip/interrail-railway-map)
+provides broad transport context; its
+[Greece guidance](https://www.interrail.com/en/plan-your-trip/tips-and-tricks/trains-europe/trains-country/trains-greece)
+also illustrates why geographic connections must not be treated as live services.
+
+The 36-second journey starts in Madrid and makes one smooth northeast pan
+to Helsinki, arriving at 27 seconds and holding there. Its scale stays fixed
+throughout playback; there is no regional tour or final overview zoom. Both
+desktop and compact layouts use the same direction. It plays once, remains still
+and never rewinds. Nordic colours and uniform station landing/connection pulses
+match the editor; simultaneous arrivals produce one pulse. A moving capsule
+follows each growing route at constant distance speed.
+
+Labels use one deterministic layout based on actual text widths, reserving space
+around every city marker. They try nearby positions before more distant ones and
+never reflow as the camera moves or cities appear. Tests check label/label and
+label/marker overlap at multiple text widths. The example workflow and sign-in
+options remain on the page.
+
+On desktop, the example card uses a 45% white background and 65% section fills
+so the moving geography and routes remain visible through it. The workflow's
+ink, labels and station markers remain opaque. The left background wash is
+lighter; sign-in controls retain a solid card. Compact layouts keep a solid
+example card because their animation already has a separate area.
+
+At viewport widths of 860 px or less, matching the single-column landing layout,
+the animation occupies a separate 320–460 px high area below the header, above
+the page content. Cards cannot cover it. The camera follows the same northeast
+pan as desktop. Its minimum
+0.75 scale keeps city labels at least
+12 px and sea strokes at least 3 px. Side branches enter and leave the view as
+the journey advances; labels appear only when their full outline fits, and the
+compact view uses stronger contrast without the background wash. The final
+frame stays at Helsinki. Changing layouts preserves playback progress.
 
 One requestAnimationFrame player draws the cover; there are no per-route SVG
 masks, native animation players or per-frame React updates. Land is rasterised

@@ -241,12 +241,12 @@ export default function Home({
   const landing = cloudEnabled && !member && !tryLocal;
   return (
     <div className={`home${landing ? ' landing-page' : ''}`}>
-      {landing && <CoverBackdrop />}
       <header className="topbar">
         <Wordmark />
         <span className="spacer" />
         {member && <Account member={member} />}
       </header>
+      {landing && <CoverBackdrop />}
       {member ? (
         <Workspace key={member.id} member={member} onOpenLocal={onOpenLocal} onOpenCloud={onOpenCloud} onCreate={onCreate} createError={createError} />
       ) : landing ? (

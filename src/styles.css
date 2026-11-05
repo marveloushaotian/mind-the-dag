@@ -2,6 +2,7 @@
 @font-face { font-family: Inter; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/Inter-400.woff2') format('woff2'); }
 @font-face { font-family: Inter; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/Inter-600.woff2') format('woff2'); }
 @font-face { font-family: Inter; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/Inter-700.woff2') format('woff2'); }
+@font-face { font-family: 'Google Sans'; font-style: normal; font-weight: 500; font-display: swap; src: url('/fonts/GoogleSans-500-latin.woff2') format('woff2'); }
 :root {
   --ink: #1a1d21;
   --muted: #5c636b;
@@ -400,10 +401,16 @@ button.link.inline { height: auto; padding: 0; font: inherit; color: var(--ink);
 .signin-sub { margin: -4px 0 6px; color: var(--muted); font-size: var(--text-body); }
 .signin-skeleton { height: 44px; border-radius: 10px; background: var(--hover); }
 .btn-oauth { height: 44px; width: 100%; justify-content: center; gap: 10px; font-size: var(--text-body); font-weight: 600; border-radius: 10px; }
+.oauth-mark { display: block; flex: none; object-fit: contain; }
 .btn-github { background: #1f2328; border-color: #1f2328; color: #fff; }
 .btn-github:hover:not(:disabled) { background: #32383f; border-color: #32383f; }
 .btn-github:disabled { opacity: 0.7; }
+.btn-google { background: #fff; border-color: #747775; color: #1f1f1f; font-family: 'Google Sans', Inter, system-ui, sans-serif; font-size: 14px; font-weight: 500; line-height: 20px; }
+.btn-google:hover:not(:disabled) { background: #f8fafd; border-color: #5f6368; }
+.btn-google:disabled { opacity: 0.7; }
 .signin-alt { align-self: center; font-size: var(--text-note); line-height: var(--leading-note); }
+.signin-privacy { margin: 8px 0 0; text-align: center; font-size: var(--text-note); color: var(--muted); }
+.signin-privacy a { color: inherit; }
 .signin-or { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: var(--text-note); line-height: var(--leading-note); margin: 4px 0; }
 .signin-or::before, .signin-or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 .signin-submit { height: 40px; justify-content: center; }
@@ -498,13 +505,27 @@ button { transition: background-color 120ms ease, border-color 120ms ease, color
 .join .note.warn, .landing .note.warn { color: var(--danger); }
 
 /* One lightweight geographical journey, with the editor's palette and station motion. */
+.cover-journey { display: contents; }
 .europe-backdrop { position: fixed; inset: 52px 0 0; z-index: 0; overflow: hidden; pointer-events: none; background: #F4F7F5; }
-.europe-backdrop::after { content: ''; position: absolute; inset: 0; background: linear-gradient(115deg, #F5F6F7B8 8%, #F5F6F71A 46%, #F5F6F754 68%, #F5F6F7DB 100%); }
+.europe-backdrop::after { content: ''; position: absolute; inset: 0; background: linear-gradient(115deg, #F5F6F73D 8%, #F5F6F714 46%, #F5F6F754 68%, #F5F6F7DB 100%); }
 .europe-map { display: block; width: 100%; height: 100%; }
 .landing-page > .topbar, .join-page > .topbar { position: relative; z-index: 2; }
 .cover-motion { position: fixed; z-index: 3; left: 20px; bottom: 16px; height: 32px; padding: 0 10px; font-size: var(--text-note); line-height: var(--leading-note); color: var(--muted); background: #FFFFFFCC; backdrop-filter: blur(8px); }
 @media (max-width: 640px) { .cover-motion { left: 12px; width: 32px; padding: 0; } .cover-motion span { display: none; } }
 .landing, .join { position: relative; z-index: 1; }
+/* Transmit the moving map through the showcase while keeping its ink opaque. */
+@media (min-width: 861px) {
+  .landing-preview { background: #FFFFFF73; border-color: #FFFFFFB3; box-shadow: 0 8px 32px #1a1d2108; }
+  .landing-preview [data-sel^="section:"] > rect { fill-opacity: 0.65; }
+}
+/* Give the journey its own space before cards can obscure it on smaller screens. */
+@media (max-width: 860px) {
+  .cover-journey { display: block; position: relative; height: clamp(320px, 65vw, 460px); }
+  .europe-backdrop { position: absolute; inset: 0; }
+  .europe-backdrop::after { background: none; }
+  .cover-motion { position: absolute; left: 12px; bottom: 12px; }
+  .landing, .join { padding-top: 24px; }
+}
 
 /* invitation links list */
 .link-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; }

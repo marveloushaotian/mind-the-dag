@@ -89,6 +89,21 @@ routerAdd(
 );
 
 // ---------------------------------------------------------------- invitation links (sign-up)
+// Provider identities remain authoritative after linking. For a first-time provider,
+// match the verified email case-insensitively before considering invitation-based creation.
+onRecordAuthWithOAuth2Request((e) => {
+  if (!e.record && e.oAuth2User.email) {
+    const email = e.oAuth2User.email.trim().toLowerCase();
+    const matches = e.app.findRecordsByFilter("users", "email:lower = {:email}", "", 2, 0, { email });
+    if (matches.length > 1) throw new BadRequestError("More than one account uses this email. Ask the admin for help.");
+    if (matches.length === 1) {
+      e.record = matches[0];
+      e.isNewRecord = false;
+    }
+  }
+  e.next();
+}, "users");
+
 // A link is valid while it has not expired and fewer people than maxUses (1-20) used it.
 
 // A new link: the server makes the code and the expiry (14 days); a group must be one of yours.

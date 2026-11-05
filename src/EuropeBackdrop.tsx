@@ -3,7 +3,7 @@ import { reducedMotion } from './motion';
 import { JOURNEY_DURATION } from './europeJourney';
 import { createJourneyRenderer } from './europeCanvas';
 
-/** One bounded canvas player. It stops drawing permanently on arrival in Scandinavia. */
+/** One bounded canvas player. It releases its frame callback when the journey finishes. */
 export default function EuropeBackdrop() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const frame = useRef<HTMLDivElement>(null);
@@ -59,7 +59,7 @@ export default function EuropeBackdrop() {
       if (disposed) return;
       const { width, height } = frame.current!.getBoundingClientRect();
       if (width <= 0 || height <= 0) return;
-      renderer.resize(Math.round(width), Math.round(height));
+      renderer.resize(Math.round(width), Math.round(height), matchMedia('(max-width: 860px)').matches);
       draw();
     };
     if (reduced) { time.current = JOURNEY_DURATION; setFinished(true); }
@@ -90,7 +90,7 @@ export default function EuropeBackdrop() {
     };
   }, [reduced]);
 
-  return <>
+  return <div className="cover-journey">
     <div ref={frame} className="europe-backdrop" aria-hidden="true">
       <canvas ref={canvas} className="europe-map" />
     </div>
@@ -105,5 +105,5 @@ export default function EuropeBackdrop() {
       </svg>
       <span>{paused ? 'Play map' : 'Pause map'}</span>
     </button>}
-  </>;
+  </div>;
 }

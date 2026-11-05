@@ -27,7 +27,7 @@ function landImage() {
     ctx.stroke(path);
   }
   // Keep the illustration's emphasis west of the Baltic, without a hard crop.
-  const east = ctx.createLinearGradient(project([26, 54]).x, 0, project([32, 54]).x, 0);
+  const east = ctx.createLinearGradient(project([34, 54]).x, 0, project([39, 54]).x, 0);
   east.addColorStop(0, '#000'); east.addColorStop(1, '#0000');
   ctx.globalCompositeOperation = 'destination-in';
   ctx.fillStyle = east;
@@ -59,9 +59,10 @@ export function createJourneyRenderer(canvas: HTMLCanvasElement) {
       text.strokeText(city.name, 4, y + 14); text.fillText(city.name, 4, y + 14);
     });
   };
-  let width = 0, height = 0, ratio = 1;
+  let width = 0, height = 0, ratio = 1, compact = false;
   return {
-    resize(w: number, h: number) {
+    resize(w: number, h: number, showCompact = false) {
+      compact = showCompact;
       const nextRatio = canvasResolution(w, h, window.devicePixelRatio || 1);
       measureLabels();
       if (w === width && h === height && ratio === nextRatio) return;
@@ -73,7 +74,7 @@ export function createJourneyRenderer(canvas: HTMLCanvasElement) {
       ctx.globalAlpha = 1;
       ctx.fillStyle = SEA;
       ctx.fillRect(0, 0, width, height);
-      const camera = cameraAt(time, width, height);
+      const camera = cameraAt(time, width, height, compact);
       ctx.translate(camera.x, camera.y); ctx.scale(camera.scale, camera.scale);
       ctx.globalAlpha = 0.8;
       ctx.drawImage(land, 0, 0);
@@ -86,7 +87,7 @@ export function createJourneyRenderer(canvas: HTMLCanvasElement) {
         const limit = route.length * progress;
         for (const part of paths.get(route.id)!) {
           if (limit <= part.start) break;
-          ctx.globalAlpha = part.sea ? 0.52 : 0.58;
+          ctx.globalAlpha = compact ? 0.8 : part.sea ? 0.52 : 0.58;
           ctx.lineWidth = part.sea ? 4 : tokens.line.width * 0.75;
           ctx.setLineDash(part.sea ? [7, 9] : []);
           ctx.lineDashOffset = -part.start;
@@ -118,7 +119,7 @@ export function createJourneyRenderer(canvas: HTMLCanvasElement) {
         const { opacity, scale } = cityAppearance(city.id, time);
         if (opacity <= 0) continue;
         ctx.save(); ctx.translate(city.x, city.y); ctx.scale(scale, scale);
-        ctx.globalAlpha = opacity * 0.67;
+        ctx.globalAlpha = opacity * (compact ? 0.9 : 0.67);
         ctx.fillStyle = city.kind === 'step' ? '#fff' : INK;
         ctx.strokeStyle = INK; ctx.lineWidth = 2.5;
         ctx.beginPath();
@@ -132,7 +133,12 @@ export function createJourneyRenderer(canvas: HTMLCanvasElement) {
         // Labels stay still while the complete glyph scales uniformly.
         const label = labels.get(city.id)!;
         const row = labelRows.get(city.id)!;
-        ctx.globalAlpha = opacity * 0.72;
+        // A passing city name appears only when its entire outline fits the frame.
+        if (compact && (camera.x + (label.x0 - 4) * camera.scale < 8
+          || camera.x + (label.x1 + 4) * camera.scale > width - 8
+          || camera.y + (label.y0 - 4) * camera.scale < 8
+          || camera.y + (label.y1 + 4) * camera.scale > height - 8)) continue;
+        ctx.globalAlpha = opacity * (compact ? 0.95 : 0.72);
         ctx.drawImage(labelAtlas, 0, row.y * 2, row.width * 2, 56, label.x0 - 4, label.y - 14, row.width, 28);
       }
       ctx.globalAlpha = 1;

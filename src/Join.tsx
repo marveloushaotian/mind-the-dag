@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
-import { OAuthButton, SignInCard } from './dialogs';
-import { acceptSignupLink, explain, joinUrl, listMyGroups, signInProviders, signupInfo, signUpWith, signUpWithPassword, useMember, type Provider, type SignupInfo } from './cloud';
+import { OAuthButton, PrivacyLink, SignInCard } from './dialogs';
+import { acceptSignupLink, cancelSocialSignIn, explain, joinUrl, listMyGroups, PROVIDER_LABEL, signupInfo, signUpWith, signUpWithPassword, useMember, useSignInProviders, type SignupInfo } from './cloud';
 import { Wordmark } from './ui';
 import CoverBackdrop from './CoverBackdrop';
 
-/** The page an invitation link opens: create an account (GitHub or email), or join with one you have. */
+/** The page an invitation link opens: create an account, or join with one you have. */
 export default function Join({ code, onDone }: { code: string; onDone: (groupId: string | null) => void }) {
   const member = useMember();
   const [info, setInfo] = useState<SignupInfo | null>(null);
-  const [providers, setProviders] = useState<Provider[]>([]);
+  const { providers, error: providerError, retry: retryProviders } = useSignInProviders();
   const [mode, setMode] = useState<'choose' | 'email' | 'signin'>('choose');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -17,9 +17,9 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
   const [copied, setCopied] = useState(false);
+  useEffect(() => () => cancelSocialSignIn(), []);
   useEffect(() => {
     signupInfo(code).then(setInfo, () => setInfo({ valid: false, reason: 'unknown', inviter: '', group: '' }));
-    void signInProviders().then(setProviders);
   }, [code, member?.id]);
 
   const run = async (what: string, fn: () => Promise<void>) => {
@@ -53,10 +53,10 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
 
   return (
     <div className="home join-page">
-      <CoverBackdrop />
       <header className="topbar">
         <Wordmark />
       </header>
+      <CoverBackdrop />
       <main className="join">
         {!info ? (
           <div className="signin-card join-card">
@@ -145,13 +145,17 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
               {info.inviter} invited you to {invitedTo}. Create your account with either of these:
             </p>
             <div className="join-choices">
-              {providers.map((p) => (
-                <OAuthButton key={p} provider={p} busy={busy === p} disabled={!!busy || preview} onClick={() => void run(p, async () => (await signUpWith(p, code), await finish()))} label={`Sign up with ${p === 'github' ? 'GitHub' : p}`} />
+              {providers === null && <div className="signin-skeleton" aria-hidden="true" />}
+              {providerError && <p className="note warn" role="alert">{providerError}{' '}
+                <button type="button" className="link inline" onClick={retryProviders}>Reload sign-in options</button></p>}
+              {providers?.map((p) => (
+                <OAuthButton key={p} provider={p} busy={busy === p} disabled={!!busy || preview} onClick={() => void run(p, async () => (await signUpWith(p, code), await finish()))} label={`Sign up with ${PROVIDER_LABEL[p]}`} />
               ))}
               <button className={`btn-oauth btn-email${mode === 'email' ? ' on' : ''}`} disabled={!!busy} onClick={() => setMode('email')}>
                 Sign up with email
               </button>
             </div>
+            {(busy === 'google' || busy === 'github') && <button type="button" className="link signin-alt" onClick={cancelSocialSignIn}>Cancel sign-in</button>}
             {mode === 'email' && (
               <form
                 className="stack tight join-form"
@@ -186,6 +190,7 @@ export default function Join({ code, onDone }: { code: string; onDone: (groupId:
                 Sign in to accept
               </button>
             </p>
+            <PrivacyLink />
           </div>
         )}
       </main>

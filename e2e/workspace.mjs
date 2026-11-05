@@ -223,7 +223,7 @@ try {
   log('Bob leaves the group');
   await B.getByRole('button', { name: /all maps/ }).click();
   await B.locator('.side-item', { hasText: 'Lab' }).click();
-  await B.getByRole('button', { name: 'Members' }).click();
+  await B.getByRole('button', { name: 'Members', exact: true }).click();
   await B.getByRole('button', { name: 'Leave group', exact: true }).click();
   await B.getByRole('group', { name: 'Confirm membership change' }).getByRole('button', { name: 'Leave group', exact: true }).click();
   await B.locator('.home-title', { hasText: 'My maps' }).waitFor();

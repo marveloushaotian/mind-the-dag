@@ -96,6 +96,7 @@ export function LeftRail({
           <IPlus size={16} />
         </button>
       </div>
+      <p className="inspector-note rail-note">Select a line to draw. Use ⋯ to edit its colour and style.</p>
       <ul className="lines">
         {doc.lines.map((l, i) => (
           <li key={l.id} className={`${active === l.id ? 'active' : ''}${used.has(l.id) ? '' : ' unused'}`}>

@@ -64,7 +64,7 @@ try {
   for (const format of ['SVG', 'PDF', 'PNG']) {
     await A.getByRole('button', { name: 'Export', exact: true }).click();
     // A menu can be present in the DOM while a canvas stacking context covers it.
-    await A.getByRole('menuitem', { name: format, exact: true }).click({ timeout: 5000 });
+    await A.getByRole('menuitem', { name: new RegExp(`^${format}\\b`) }).click({ timeout: 5000 });
     const dialog = A.getByRole('dialog', { name: `Export ${format}`, exact: true });
     await dialog.waitFor();
     await dialog.getByRole('button', { name: 'Export', exact: true }).waitFor({ state: 'visible' });
@@ -83,7 +83,7 @@ try {
   await A.getByRole('button', { name: 'Select V', exact: true }).click();
   await A.getByRole('switch', { name: 'Legend', exact: true }).click();
   await A.getByRole('button', { name: 'Export', exact: true }).click();
-  await A.getByRole('menuitem', { name: 'PDF', exact: true }).click();
+  await A.getByRole('menuitem', { name: /^PDF\b/ }).click();
   const emptyExport = A.getByRole('dialog', { name: 'Export PDF', exact: true });
   await emptyExport.getByRole('alert').filter({ hasText: 'There is nothing to export yet' }).waitFor();
   if (!(await emptyExport.getByRole('button', { name: 'Export', exact: true }).isDisabled())) throw new Error('empty export should be disabled');
@@ -149,10 +149,10 @@ try {
 
   log('Alice (admin) makes an invitation link into Lab for someone new');
   await A.getByRole('button', { name: /all maps/ }).click();
-  await A.getByRole('button', { name: 'Invite people' }).click();
-  const inv = A.getByRole('dialog', { name: 'Invite people' });
+  await A.getByRole('button', { name: 'Invite to mind-the-dag' }).click();
+  const inv = A.getByRole('dialog', { name: 'Invite to mind-the-dag' });
   await inv.getByLabel(/^Label/).fill('Carol');
-  await inv.getByLabel('Who can use it').selectOption({ label: 'One person' });
+  await inv.getByLabel('Number of people').fill('1');
   await inv.getByLabel('Also join group').selectOption({ label: 'Lab' });
   await inv.getByRole('button', { name: 'Create invitation link' }).click();
   const link = await inv.getByLabel('Invitation link').inputValue();
@@ -190,7 +190,7 @@ try {
   log('Bob signs in, joins and sees the group map but not Alice\'s own maps');
   await B.goto(WEB);
   await signIn(B, 'bob@example.test');
-  await B.locator('.side-item', { hasText: 'Invitations' }).click();
+  await B.locator('.side-item', { hasText: 'Group invitations' }).click();
   await B.getByRole('button', { name: 'Join group' }).click();
   await B.locator('.card-title', { hasText: 'Group map' }).waitFor();
   await B.locator('.side-item', { hasText: 'My maps' }).click();
@@ -224,7 +224,8 @@ try {
   await B.getByRole('button', { name: /all maps/ }).click();
   await B.locator('.side-item', { hasText: 'Lab' }).click();
   await B.getByRole('button', { name: 'Members' }).click();
-  await B.getByRole('button', { name: 'Leave group' }).click();
+  await B.getByRole('button', { name: 'Leave group', exact: true }).click();
+  await B.getByRole('group', { name: 'Confirm membership change' }).getByRole('button', { name: 'Leave group', exact: true }).click();
   await B.locator('.home-title', { hasText: 'My maps' }).waitFor();
   if (await B.locator('.side-item', { hasText: 'Lab' }).count()) throw new Error('group still listed after leaving');
 

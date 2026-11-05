@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { reducedMotion } from './motion';
 import { IClose } from './icons';
 import type { Doc } from './model';
@@ -11,23 +11,64 @@ import googleMark from './brand/google-mark.png';
 export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = isMac ? '⌘' : 'Ctrl';
 
+// Only the top dialog owns keyboard input, including nested sign-in dialogs.
+const modalStack: HTMLElement[] = [];
+
 export function Modal({ title, onClose, children, width = 420, bare, dismissible = true }: { title: string; onClose: () => void; children: ReactNode; width?: number; bare?: boolean; dismissible?: boolean }) {
   // Closing plays a short fade-out first (skipped with "reduce motion").
   const [closing, setClosing] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<number | undefined>(undefined);
+  const [opener] = useState(() => typeof document === 'undefined' ? null : document.activeElement as HTMLElement | null);
   const close = useCallback(() => {
     if (!dismissible) return;
     if (reducedMotion()) return onClose();
+    if (closeTimer.current !== undefined) return;
     setClosing(true);
-    window.setTimeout(onClose, 140);
+    closeTimer.current = window.setTimeout(onClose, 140);
   }, [onClose, dismissible]);
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && close();
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  }, [close]);
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useLayoutEffect(() => {
+    const dialog = root.current!;
+    const child = modalStack.findIndex((el) => dialog.contains(el));
+    if (child < 0) modalStack.push(dialog);
+    else modalStack.splice(child, 0, dialog);
+    if (!dialog.contains(document.activeElement)) dialog.focus();
+    const k = (e: KeyboardEvent) => {
+      if (modalStack.at(-1) !== dialog) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        closeRef.current();
+      } else if (e.key === 'Tab') {
+        const targets = [...dialog.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], [tabindex]')]
+          .filter((el) => el.tabIndex >= 0 && !el.matches(':disabled, [hidden]') && el.getClientRects().length);
+        const first = targets[0];
+        const last = targets.at(-1);
+        if (!first || (e.shiftKey ? document.activeElement === first || document.activeElement === dialog : document.activeElement === last || document.activeElement === dialog)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first)?.focus();
+        }
+      }
+    };
+    const contain = (e: FocusEvent) => {
+      if (modalStack.at(-1) === dialog && !dialog.contains(e.target as Node)) dialog.focus();
+    };
+    window.addEventListener('keydown', k, true);
+    document.addEventListener('focusin', contain);
+    return () => {
+      window.removeEventListener('keydown', k, true);
+      document.removeEventListener('focusin', contain);
+      const wasTop = modalStack.at(-1) === dialog;
+      modalStack.splice(modalStack.indexOf(dialog), 1);
+      window.clearTimeout(closeTimer.current);
+      if (wasTop && opener?.isConnected) opener.focus();
+    };
+  }, [opener]);
   return (
     <div className={`modal-backdrop${closing ? ' closing' : ''}`} onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div className={`modal${bare ? ' bare' : ''}`} role="dialog" aria-modal="true" aria-label={title} style={{ width }}>
+      <div ref={root} tabIndex={-1} className={`modal${bare ? ' bare' : ''}`} role="dialog" aria-modal="true" aria-label={title} style={{ width }}>
         {bare ? (
           <button className="icon modal-x" onClick={close} aria-label="Close" disabled={!dismissible}>
             <IClose size={16} />
@@ -232,13 +273,14 @@ export function SignInDialog({ onClose }: { onClose: () => void }) {
 }
 
 /** Copy the open map into one of your groups. */
-function CopyToGroup({ doc, place }: { doc: Doc; place: Place }) {
+function CopyToGroup({ doc, place, onBusyChange }: { doc: Doc; place: Place; onBusyChange: (busy: boolean) => void }) {
   const member = useMember();
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [target, setTarget] = useState('');
   const [state, setState] = useState<{ busy?: boolean; done?: { id: string; name: string }; error?: string }>({});
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!member) return;
+    setState({});
     listMyGroups()
       .then((g) => {
         const others = g.filter((x) => place.kind !== 'cloud' || x.id !== place.groupId);
@@ -246,22 +288,33 @@ function CopyToGroup({ doc, place }: { doc: Doc; place: Place }) {
         setTarget(others[0]?.id ?? '');
       })
       .catch((e) => setState({ error: explain(e) }));
-  }, [member?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!member || !groups) return null;
-  if (!groups.length) return <p className="note">Make a group on the start page to share maps with others.</p>;
+  }, [member?.id, place.kind, place.kind === 'cloud' ? place.groupId : null]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(load, [load]);
+  if (!member) return null;
+  if (!groups) return state.error
+    ? <div role="alert"><p className="note warn">{state.error}</p><button onClick={load}>Try again</button></div>
+    : <p className="note" role="status">Loading your groups…</p>;
+  if (!groups.length) return place.kind === 'cloud' && place.groupId ? null : <p className="note">No groups yet. <a href="#/">Go to My maps</a> and choose New group beside Groups.</p>;
   const copy = async () => {
     setState({ busy: true });
+    onBusyChange(true);
     try {
       const m = await createCloudMap(doc, target);
       setState({ done: { id: m.id, name: groups.find((g) => g.id === target)?.name ?? 'the group' } });
     } catch (e) {
       setState({ error: explain(e) });
-    }
+    } finally { onBusyChange(false); }
   };
   return (
     <>
-      <div className="share-row">
-        <select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Group">
+      {state.done ? (
+        <div className="workflow-result" role="status">
+          <strong>Group copy created in {state.done.name}</strong>
+          <p className="note">Continue editing the group copy so your colleagues see your changes.</p>
+          <a href={`#/cloud/${state.done.id}`}>Open the group copy →</a>
+        </div>
+      ) : <><div className="field"><span>Copy to a group</span><div className="share-row">
+        <select disabled={state.busy} value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Group">
           {groups.map((g) => (
             <option key={g.id} value={g.id}>
               {g.name}
@@ -271,47 +324,62 @@ function CopyToGroup({ doc, place }: { doc: Doc; place: Place }) {
         <button className="primary" onClick={copy} disabled={state.busy || !target}>
           {state.busy ? 'Copying…' : 'Copy to group'}
         </button>
-      </div>
-      {state.done ? (
-        <p className="note ok">
-          Copied to {state.done.name}.{' '}
-          <a href={`#/cloud/${state.done.id}`} onClick={() => undefined}>
-            Open the group copy
-          </a>
-        </p>
-      ) : (
-        <p className="note">The group gets its own copy that every member can edit; this map stays as it is.</p>
-      )}
-      {state.error && <p className="note warn">{state.error}</p>}
+      </div></div>
+      <p className="note">All group members can edit the new copy. Changes to these two copies stay separate.</p></>}
+      {state.error && <p className="note warn" role="alert">{state.error}</p>}
     </>
   );
+}
+
+/** A selectable link remains usable when browser clipboard permission is unavailable. */
+export function CopyLinkField({ url, label = 'Link', buttonLabel = 'Copy link' }: { url: string; label?: string; buttonLabel?: string }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [status, setStatus] = useState<'idle' | 'copied' | 'manual'>('idle');
+  useEffect(() => setStatus('idle'), [url]);
+  return <div className="stack tight">
+    <div className="share-row">
+      <input ref={input} readOnly value={url} aria-label={label} onFocus={(e) => e.target.select()} />
+      <button className="primary" onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(url);
+          setStatus('copied');
+        } catch {
+          input.current?.focus();
+          input.current?.select();
+          setStatus('manual');
+        }
+      }}>{status === 'copied' ? 'Copied' : buttonLabel}</button>
+    </div>
+    <span className="note" role="status">{status === 'manual' ? `Copying is unavailable. The link is selected; press ${MOD}+C to copy it.` : status === 'copied' ? 'Link copied. Share it with your recipients.' : ''}</span>
+  </div>;
 }
 
 export function ShareDialog({ doc, place, onClose, onMoveToCloud }: { doc: Doc; place: Place; onClose: () => void; onMoveToCloud?: () => Promise<void> }) {
   const member = useMember();
   const [moveError, setMoveError] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
+  const [copying, setCopying] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [mode, setMode] = useState<'snapshot' | 'group'>(place.kind === 'cloud' && place.groupId ? 'group' : 'snapshot');
   useEffect(() => {
-    shareUrl(doc).then(setUrl).catch(() => setUrl(null));
-  }, [doc]);
-  const copy = async () => {
-    if (!url) return;
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      /* clipboard blocked: the field stays selectable */
-    }
-  };
+    let live = true;
+    setUrl(null);
+    setLinkError(null);
+    shareUrl(doc).then((value) => { if (live) setUrl(value); }).catch(() => { if (live) setLinkError('Could not prepare the snapshot link. Try again.'); });
+    return () => { live = false; };
+  }, [doc, attempt]);
   return (
-    <Modal title="Share" onClose={onClose} width={500}>
-      {cloudEnabled && (
+    <Modal title="Share" onClose={onClose} width={500} dismissible={!moving && !copying}>
+      {cloudEnabled && <div className="seg" role="group" aria-label="Sharing purpose">
+        <button disabled={moving || copying} aria-pressed={mode === 'snapshot'} className={mode === 'snapshot' ? 'on' : ''} onClick={() => setMode('snapshot')}>Send a snapshot</button>
+        <button disabled={moving || copying} aria-pressed={mode === 'group'} className={mode === 'group' ? 'on' : ''} onClick={() => setMode('group')}>Collaborate with a group</button>
+      </div>}
+      {cloudEnabled && mode === 'group' && (
         <div className="group-share">
-          <h3>With a group</h3>
+          <h3>Work on a shared map</h3>
           {!member ? (
             <>
               <p className="note">Sign in to keep your maps in the cloud and share them with a group.</p>
@@ -321,7 +389,11 @@ export function ShareDialog({ doc, place, onClose, onMoveToCloud }: { doc: Doc; 
           ) : (
             <>
               {place.kind === 'cloud' && place.groupName && (
-                <p className="note">This map is in {place.groupName}: everyone in the group can view and edit it.</p>
+                <div className="workflow-result">
+                  <strong>{place.groupName} · Members can edit</strong>
+                  <p className="note">This link opens the shared map, including future changes. Only members of this group can open it.</p>
+                  <CopyLinkField url={new URL(`#/cloud/${place.mapId}`, window.location.href).href} label="Group map link" />
+                </div>
               )}
               {place.kind === 'local' && onMoveToCloud && (
                 <p className="note">
@@ -336,30 +408,27 @@ export function ShareDialog({ doc, place, onClose, onMoveToCloud }: { doc: Doc; 
                         await onMoveToCloud();
                       } catch (e) {
                         setMoveError(explain(e));
-                        setMoving(false);
-                      }
+                      } finally { setMoving(false); }
                     }}
                   >
-                    Move it to My maps
+                    {moving ? 'Moving…' : 'Move it to My maps'}
                   </button>{' '}
                   to open it anywhere.
                 </p>
               )}
               {moveError && <p className="note warn">{moveError}</p>}
-              <CopyToGroup doc={doc} place={place} />
+              <CopyToGroup doc={doc} place={place} onBusyChange={setCopying} />
             </>
           )}
         </div>
       )}
-      <h3>View-only link</h3>
-      <div className="share-row">
-        <input readOnly value={url ?? 'Preparing…'} onFocus={(e) => e.target.select()} aria-label="Link" />
-        <button className="primary" onClick={copy} disabled={!url}>
-          {copied ? 'Copied' : 'Copy'}
-        </button>
-      </div>
-      <p className="note">The map is stored inside the link itself; nothing is uploaded. Anyone with it can view the map and save their own copy.</p>
-      {url && url.length > 8000 && <p className="note warn">This link is long; some chat apps may cut it. Sending the .json map file is safer.</p>}
+      {mode === 'snapshot' && <>
+        <h3>Anyone with the link · View only</h3>
+        <p className="note">Send the map as it looks now. Recipients can view it without an account and make their own copy.</p>
+        <p className="note">Later edits will not update this snapshot. It cannot be withdrawn after sharing.</p>
+        {url ? <CopyLinkField url={url} label="Snapshot link" /> : linkError ? <div role="alert"><p className="note warn">{linkError}</p><button onClick={() => setAttempt((n) => n + 1)}>Try again</button></div> : <p role="status" className="note">Preparing snapshot…</p>}
+        {url && url.length > 8000 && <p className="note warn">This link is long; some chat apps may cut it. Use Export → Map file (.json) to send an editable file instead.</p>}
+      </>}
     </Modal>
   );
 }

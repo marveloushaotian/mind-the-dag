@@ -34,7 +34,8 @@ export function CustomColour({ label, value, base, theme, role, onChange, onRese
   // Existing manual pairs stay independent; a new custom pair starts linked.
   const matching = value?.matchThemes ?? !value;
   return <details className="custom-colour" open={Boolean(value)}>
-    <summary>{label}</summary>
+    <summary>{label}<span className="colour-value"><i aria-hidden="true" style={{ background: (value ?? base)[theme] }} />{(value ?? base)[theme]}</span></summary>
+    <p className="inspector-note">Choose any colour with the picker or enter a hex code.</p>
     <Toggle label="Auto match themes" checked={matching} onChange={(enabled) =>
       onChange(editColourPair(value ?? base, theme, (value ?? base)[theme], role, enabled))} />
     <div className="colour-pair">

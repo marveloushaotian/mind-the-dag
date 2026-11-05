@@ -10,7 +10,7 @@ import { emptyDoc, type Doc } from './model';
 import { docBounds, MetroMap } from './render';
 import CoverBackdrop from './CoverBackdrop';
 import { AccountMenu } from './AccountProfile';
-import { Modal, SignInCard, SignInDialog } from './dialogs';
+import { CopyLinkField, Modal, SignInCard, SignInDialog } from './dialogs';
 import {
   acceptInvitation,
   cloudEnabled,
@@ -128,7 +128,7 @@ function Card({
             );
           })}
           {danger && (
-            <button className="card-act danger" onClick={() => setConfirm(true)} aria-label={danger.label} data-tip={danger.label}>
+            <button className="card-act danger" disabled={busy} onClick={() => setConfirm(true)} aria-label={danger.label} data-tip={danger.label}>
               <ITrash size={16} />
             </button>
           )}
@@ -139,7 +139,7 @@ function Card({
           <strong>Delete “{title || 'Untitled'}”?</strong>
           {danger.warning && <span>{danger.warning}</span>}
           <div className="card-confirm-actions">
-            <button onClick={() => setConfirm(false)} autoFocus>
+            <button disabled={busy} onClick={() => setConfirm(false)} autoFocus>
               Keep
             </button>
             <button className="solid-danger" disabled={busy} onClick={() => void act(danger.run)}>
@@ -459,7 +459,7 @@ function Workspace({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [newGroup, setNewGroup] = useState(false);
-  const [managing, setManaging] = useState(false);
+  const [managing, setManaging] = useState<'invite' | 'members' | null>(null);
   const [copying, setCopying] = useState<CloudMap | null>(null);
   const [links, setLinks] = useState<{ group: string | null } | null>(null);
 
@@ -478,7 +478,6 @@ function Workspace({
       else apply();
     } catch (e) {
       setError(explain(e));
-      setGroups([]);
     }
     setLocal(listMaps());
   }, []);
@@ -497,11 +496,14 @@ function Workspace({
       setMaps(fresh);
     } catch (e) {
       setError(explain(e));
-      setMaps([]);
     }
   }, [section]);
   useEffect(() => {
     void loadSide();
+    const refresh = () => { if (document.visibilityState === 'visible') void loadSide(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
   }, [loadSide]);
   useEffect(() => {
     setError(null);
@@ -510,7 +512,6 @@ function Workspace({
   // A remembered group you have since left: fall back to My maps.
   useEffect(() => {
     if (groups && groupId && !group) setSection('mine');
-    if (section === 'invites' && groups && !invites.length) setSection('mine');
     if (section === 'local' && !local.length) setSection('mine');
   }, [groups, groupId, group, section, invites.length, local.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -545,7 +546,7 @@ function Workspace({
     else setSection('mine');
   };
 
-  const title = section === 'mine' ? 'My maps' : section === 'local' ? 'On this browser' : section === 'invites' ? 'Invitations' : (group?.name ?? '');
+  const title = section === 'mine' ? 'My maps' : section === 'local' ? 'On this browser' : section === 'invites' ? 'Group invitations' : (group?.name ?? '');
   const hint =
     section === 'mine'
       ? 'Only you can see these'
@@ -563,8 +564,8 @@ function Workspace({
         </button>
         <div className="side-h">
           <span>Groups</span>
-          <button className="icon small" onClick={() => setNewGroup(true)} aria-label="New group" title="New group">
-            <IPlus size={14} />
+          <button className="small" onClick={() => setNewGroup(true)} aria-label="New group" title="New group">
+            <IPlus size={14} /> New group
           </button>
         </div>
         {groups?.map((g) => (
@@ -577,11 +578,9 @@ function Workspace({
             Start a group to share maps
           </button>
         )}
-        {invites.length > 0 && (
-          <button className={`side-item${section === 'invites' ? ' on' : ''}`} onClick={() => setSection('invites')}>
-            Invitations <span className="count">{invites.length}</span>
-          </button>
-        )}
+        <button className={`side-item${section === 'invites' ? ' on' : ''}`} onClick={() => setSection('invites')}>
+          Group invitations {invites.length > 0 && <span className="count">{invites.length}</span>}
+        </button>
         {local.length > 0 && (
           <button className={`side-item muted${section === 'local' ? ' on' : ''}`} onClick={() => setSection('local')}>
             On this browser <span className="count">{local.length}</span>
@@ -591,7 +590,7 @@ function Workspace({
           <>
             <span className="spacer" />
             <button className="side-item side-invite" onClick={() => setLinks({ group: null })}>
-              <IPlus size={14} /> Invite people
+              <IPlus size={14} /> Invite to mind-the-dag
             </button>
           </>
         )}
@@ -602,9 +601,10 @@ function Workspace({
           <h1 className="home-title">{title}</h1>
           {hint && <span className="home-hint">{hint}</span>}
           {group && (
-            <button className="small title-btn" onClick={() => setManaging(true)}>
-              <IGroup size={15} /> Members{group.role === 'owner' ? ' & settings' : ''}
-            </button>
+            <div className="group-title-actions">
+              <button className="primary small" onClick={() => setManaging('invite')}><IPlus size={15} /> Invite members</button>
+              <button className="small" onClick={() => setManaging('members')}><IGroup size={15} /> Members{group.role === 'owner' ? ' & settings' : ''}</button>
+            </div>
           )}
         </div>
 
@@ -628,8 +628,8 @@ function Workspace({
           </div>
         )}
         {createError && <p className="home-error">{createError}</p>}
-        {error && <p className="home-error">{error}</p>}
-        {notice && <p className="home-notice">{notice}</p>}
+        {error && <div className="callout" role="alert"><p className="home-error">{error}</p><button className="small" onClick={() => { setError(null); void loadSide(); void loadMaps(); }}>Refresh workspace</button></div>}
+        {notice && <p className="home-notice" role="status">{notice}</p>}
         {section === 'mine' && local.length > 0 && (
           <div className="callout">
             <span>
@@ -644,6 +644,10 @@ function Workspace({
         {section === 'local' && <LocalDrafts maps={local} onOpen={onOpenLocal} onChange={() => setLocal(listMaps())} onMove={moveLocal} />}
 
         {section === 'invites' && (
+          <div className="stack">
+          <p className="home-hint">Accept an invitation to view and edit that group's maps. Invitations appear here; no email is sent.</p>
+          <button className="align-start small" onClick={() => void loadSide()}>Refresh invitations</button>
+          {!invites.length && <p className="home-hint">No pending invitations. Ask a group member to invite the email shown in your Account profile.</p>}
           <ul className="invites">
             {invites.map((i) => (
               <InviteRow
@@ -656,10 +660,11 @@ function Workspace({
               />
             ))}
           </ul>
+          </div>
         )}
 
         {(section === 'mine' || groupId) &&
-          (maps === null ? (
+          (maps === null ? (error ? null : (
             <ul className="cards" aria-busy="true" aria-label="Loading maps">
               {[0, 1, 2].map((i) => (
                 <li key={i} className="card skeleton" style={{ '--i': i } as CSSProperties}>
@@ -669,7 +674,7 @@ function Workspace({
                 </li>
               ))}
             </ul>
-          ) : maps.length === 0 ? (
+          )) : maps.length === 0 ? (
             <p className="home-hint pad">
               {section === 'mine' ? 'No maps yet. Start a new one above.' : 'No maps in this group yet. Make one here, or copy one in from My maps.'}
             </p>
@@ -707,8 +712,10 @@ function Workspace({
                               label: 'Copy to My maps',
                               icon: 'duplicate',
                               run: async () => {
-                                await createCloudMap({ ...m.doc, title: m.title }).catch((e) => setError(explain(e)));
-                                setNotice(`Copied “${m.title}” to My maps.`);
+                                try {
+                                  await createCloudMap({ ...m.doc, title: m.title });
+                                  setNotice(`Copied “${m.title}” to My maps.`);
+                                } catch (e) { setNotice(null); setError(explain(e)); }
                               },
                             },
                           ]
@@ -754,7 +761,7 @@ function Workspace({
           onCreated={async (id) => {
             setNewGroup(false);
             await loadSide(`g:${id}`);
-            setManaging(true);
+            setManaging('invite');
           }}
         />
       )}
@@ -762,14 +769,15 @@ function Workspace({
         <GroupDialog
           group={group}
           member={member}
-          onClose={() => setManaging(false)}
+          initialPage={managing}
+          onClose={() => setManaging(null)}
           onChanged={() => loadSide()}
           onGone={async () => {
-            setManaging(false);
+            setManaging(null);
             await loadSide('mine');
           }}
           onNewLink={() => {
-            setManaging(false);
+            setManaging(null);
             setLinks({ group: group.id });
           }}
         />
@@ -823,12 +831,14 @@ function NewGroupDialog({ onClose, onCreated }: { onClose: () => void; onCreated
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <Modal title="New group" onClose={onClose}>
+    <Modal title="New group" onClose={onClose} dismissible={!busy}>
       <form
         className="stack"
         onSubmit={async (e) => {
           e.preventDefault();
+          if (busy) return;
           setBusy(true);
+          setError(null);
           try {
             onCreated(await createGroup(name));
           } catch (err) {
@@ -839,16 +849,16 @@ function NewGroupDialog({ onClose, onCreated }: { onClose: () => void; onCreated
       >
         <label className="field">
           <span>Name</span>
-          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Vatanen lab" maxLength={120} />
+          <input autoFocus disabled={busy} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Vatanen lab" maxLength={120} />
         </label>
-        <p className="note">You can invite people right after.</p>
-        {error && <p className="note warn">{error}</p>}
+        <p className="note">Everyone in the group can view and edit its maps. After creating it, invite colleagues who have a mind-the-dag account.</p>
+        {error && <p className="note warn" role="alert">{error}</p>}
         <div className="actions">
-          <button type="button" onClick={onClose}>
+          <button type="button" disabled={busy} onClick={onClose}>
             Cancel
           </button>
           <button type="submit" className="primary" disabled={busy || !name.trim()}>
-            Create group
+            {busy ? 'Creating…' : 'Create group'}
           </button>
         </div>
       </form>
@@ -861,11 +871,11 @@ function CopyDialog({ map, groups, onClose, onDone }: { map: CloudMap; groups: G
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <Modal title="Copy to group" onClose={onClose}>
+    <Modal title="Copy to group" onClose={onClose} dismissible={!busy}>
       <div className="stack">
         <label className="field">
           <span>Group</span>
-          <select value={target} onChange={(e) => setTarget(e.target.value)}>
+          <select disabled={busy} value={target} onChange={(e) => setTarget(e.target.value)}>
             {groups.map((g) => (
               <option key={g.id} value={g.id}>
                 {g.name}
@@ -876,12 +886,13 @@ function CopyDialog({ map, groups, onClose, onDone }: { map: CloudMap; groups: G
         <p className="note">The group gets its own copy that every member can edit; “{map.title}” stays in My maps as it is.</p>
         {error && <p className="note warn">{error}</p>}
         <div className="actions">
-          <button onClick={onClose}>Cancel</button>
+          <button disabled={busy} onClick={onClose}>Cancel</button>
           <button
             className="primary"
             disabled={busy || !target}
             onClick={async () => {
               setBusy(true);
+              setError(null);
               try {
                 await createCloudMap({ ...map.doc, title: map.title }, target);
                 onDone(groups.find((g) => g.id === target)?.name ?? 'the group');
@@ -891,7 +902,7 @@ function CopyDialog({ map, groups, onClose, onDone }: { map: CloudMap; groups: G
               }
             }}
           >
-            Copy
+            {busy ? 'Copying…' : 'Copy'}
           </button>
         </div>
       </div>
@@ -899,9 +910,10 @@ function CopyDialog({ map, groups, onClose, onDone }: { map: CloudMap; groups: G
   );
 }
 
-function GroupDialog({
+export function GroupDialog({
   group,
   member,
+  initialPage = 'members',
   onClose,
   onChanged,
   onGone,
@@ -909,252 +921,425 @@ function GroupDialog({
 }: {
   group: Group;
   member: Member;
+  initialPage?: 'invite' | 'members';
   onClose: () => void;
   onChanged: () => Promise<void>;
   onGone: () => Promise<void>;
   onNewLink?: () => void;
 }) {
   const owner = group.role === 'owner';
+  const [page, setPage] = useState<'invite' | 'members' | 'settings'>(initialPage);
   const [members, setMembers] = useState<GroupMember[] | null>(null);
   const [pending, setPending] = useState<Invitation[]>([]);
   const [email, setEmail] = useState('');
   const [name, setName] = useState(group.name);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [removing, setRemoving] = useState<GroupMember | null>(null);
   const load = useCallback(async () => {
+    setLoadError(null);
     try {
       const [m, p] = await Promise.all([listMembers(group.id), listGroupInvitations(group.id)]);
       setMembers(m);
       setPending(p);
     } catch (e) {
-      setError(explain(e));
+      setLoadError(explain(e));
     }
   }, [group.id]);
   useEffect(() => {
     void load();
   }, [load]);
   const run = async (fn: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
     setError(null);
     setNotice(null);
     try {
       await fn();
     } catch (e) {
       setError(explain(e));
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <Modal title={group.name} onClose={onClose} width={480}>
-      <div className="stack">
-        <h3>Members</h3>
-        <ul className="member-list">
-          {members?.map((m) => (
-            <li key={m.membershipId}>
-              <span>
-                {m.name}
-                {m.userId === member.id ? ' (you)' : ''}
-              </span>
-              <span className="home-hint">{m.role === 'owner' ? 'Owner' : 'Member'}</span>
-              <span className="spacer" />
-              {owner && m.userId !== member.id && (
-                <button className="small" onClick={() => void run(async () => (await removeMembership(m.membershipId), await load()))}>
-                  Remove
-                </button>
-              )}
-              {!owner && m.userId === member.id && (
-                <button className="small danger" onClick={() => void run(async () => (await removeMembership(m.membershipId), await onGone()))}>
-                  Leave group
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-
-        <h3>Add someone who has an account</h3>
-        <form
-          className="share-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const to = email.trim();
-            void run(async () => {
-              await invite(group.id, to);
-              setEmail('');
-              setNotice(`Invited ${to.toLowerCase()}. They'll find the invitation on their start page (no email is sent).`);
-              await load();
-            });
-          }}
-        >
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.org" aria-label="Email address to invite" />
-          <button type="submit" className="primary" disabled={!email.includes('@')}>
-            Invite
+    <Modal title={group.name} onClose={onClose} width={520} dismissible={!busy}>
+      <div className="seg" role="group" aria-label="Group management">
+        {(['invite', 'members', ...(owner ? ['settings'] : [])] as const).map((value) => (
+          <button
+            key={value}
+            className={page === value ? 'on' : ''}
+            aria-pressed={page === value}
+            disabled={busy}
+            onClick={() => {
+              setPage(value as typeof page);
+              setError(null);
+              setNotice(null);
+              setRemoving(null);
+              setConfirmDelete(false);
+            }}
+          >
+            {value === 'invite' ? 'Invite members' : value === 'members' ? 'Members' : 'Settings'}
           </button>
-        </form>
-        {notice && <p className="note ok">{notice}</p>}
-        <p className="note">
-          {member.admin ? (
-            <>
-              Someone new?{' '}
-              <button className="link inline" onClick={() => onNewLink?.()}>
-                Create an invitation link for this group
-              </button>
-              .
-            </>
-          ) : (
-            'Someone new needs an invitation link from the admin first.'
-          )}
-        </p>
-        {pending.length > 0 && (
-          <ul className="member-list">
-            {pending.map((i) => (
-              <li key={i.id}>
-                <span>{i.email}</span>
-                <span className="home-hint">invited by {i.invitedByName}</span>
-                <span className="spacer" />
-                {(owner || i.invitedById === member.id) && (
-                  <button className="small" onClick={() => void run(async () => (await deleteInvitation(i.id), await load()))}>
-                    Withdraw
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {owner && (
-          <>
-            <h3>Group</h3>
-            <form
-              className="share-row"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  await renameGroup(group.id, name);
-                  await onChanged();
-                  setNotice('Renamed.');
-                });
-              }}
-            >
-              <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Group name" maxLength={120} />
-              <button type="submit" disabled={!name.trim() || name.trim() === group.name}>
-                Rename
-              </button>
-            </form>
-            {confirmDelete ? (
-              <div className="confirm-box">
-                <strong>Delete {group.name}?</strong>
-                <span className="note">Its maps go back to the people who made them, in their My maps.</span>
-                <div className="confirm-actions">
-                  <button onClick={() => setConfirmDelete(false)}>Keep</button>
-                  <button className="solid-danger" onClick={() => void run(async () => (await deleteGroup(group.id), await onGone()))}>
-                    Delete group
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button className="danger flush align-start" onClick={() => setConfirmDelete(true)}>
-                <ITrash size={15} /> Delete group…
-              </button>
-            )}
-          </>
-        )}
-        {error && <p className="note warn">{error}</p>}
+        ))}
       </div>
+      {error && (
+        <p className="note warn" role="alert">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p className="note ok" role="status">
+          {notice}
+        </p>
+      )}
+      {page !== 'settings' && loadError && (
+        <div role="alert">
+          <p className="note warn">{loadError}</p>
+          <button disabled={busy} onClick={() => void load()}>
+            Try again
+          </button>
+        </div>
+      )}
+      {page === 'invite' && (
+        <div className="stack">
+          <p className="note">Invite a colleague who already has a mind-the-dag account. They will be able to view and edit all maps in {group.name}.</p>
+          <form
+            className="stack"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const to = email.trim().toLowerCase();
+              void run(async () => {
+                await invite(group.id, to);
+                setEmail('');
+                setNotice(`Invitation added for ${to}. Ask them to open My maps → Group invitations and choose Join group. No email was sent.`);
+                await load();
+              });
+            }}
+          >
+            <label className="field">
+              <span>Account email</span>
+              <input
+                autoFocus
+                type="email"
+                required
+                value={email}
+                disabled={busy}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.org"
+                aria-label="Email address to invite"
+                aria-describedby="invite-email-hint"
+              />
+            </label>
+            <p id="invite-email-hint" className="note">
+              Use the email shown in their Account profile. Their GitHub or Google account may use a different email from their work address.
+            </p>
+            <button type="submit" className="primary align-start" disabled={busy || !email.trim()}>
+              {busy ? 'Inviting…' : 'Invite'}
+            </button>
+          </form>
+          <div className="workflow-result">
+            <strong>What happens next?</strong>
+            <p className="note">They accept under Group invitations on their start page. Invitations appear in the app; no email is sent.</p>
+          </div>
+          <p className="note">
+            {member.admin ? (
+              <>
+                New to mind-the-dag?{' '}
+                <button className="link inline" disabled={busy} onClick={onNewLink}>
+                  Create a sign-up link for this group
+                </button>
+                .
+              </>
+            ) : (
+              'New to mind-the-dag? Ask the site admin for a sign-up link first, then invite them here.'
+            )}
+          </p>
+          {pending.length > 0 && (
+            <>
+              <h3>Pending invitations · {pending.length}</h3>
+              <ul className="member-list">
+                {pending.map((i) => (
+                  <li key={i.id}>
+                    <span>{i.email}</span>
+                    <span className="home-hint">Awaiting acceptance</span>
+                    <span className="spacer" />
+                    {(owner || i.invitedById === member.id) && (
+                      <button
+                        className="small"
+                        disabled={busy}
+                        onClick={() =>
+                          void run(async () => {
+                            await deleteInvitation(i.id);
+                            await load();
+                            setNotice(`Invitation for ${i.email} withdrawn.`);
+                          })
+                        }
+                      >
+                        Withdraw
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+      {page === 'members' && (
+        <div className="stack">
+          <p className="note">All members can view and edit this group's maps and invite existing account holders.</p>
+          {!members && !loadError && (
+            <p className="note" role="status">
+              Loading members…
+            </p>
+          )}
+          {members && (
+            <ul className="member-list">
+              {members.map((m) => (
+                <li key={m.membershipId}>
+                  <span>
+                    {m.name}
+                    {m.userId === member.id ? ' (you)' : ''}
+                  </span>
+                  <span className="home-hint">{m.role === 'owner' ? 'Owner' : 'Member'}</span>
+                  <span className="spacer" />
+                  {owner && m.userId !== member.id && (
+                    <button className="small" disabled={busy} onClick={() => setRemoving(m)}>
+                      Remove
+                    </button>
+                  )}
+                  {!owner && m.userId === member.id && (
+                    <button className="small danger" disabled={busy} onClick={() => setRemoving(m)}>
+                      Leave group
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {removing && (
+            <div className="confirm-box" role="group" aria-label="Confirm membership change">
+              <strong>{removing.userId === member.id ? `Leave ${group.name}?` : `Remove ${removing.name} from ${group.name}?`}</strong>
+              <p className="note">
+                {removing.userId === member.id
+                  ? 'You will lose access to the group maps. A member can invite you back.'
+                  : 'They will lose access to the group maps. You can invite them back later.'}
+              </p>
+              <div className="confirm-actions">
+                <button autoFocus disabled={busy} onClick={() => setRemoving(null)}>
+                  Cancel
+                </button>
+                <button
+                  className="solid-danger"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await removeMembership(removing.membershipId);
+                      if (removing.userId === member.id) await onGone();
+                      else {
+                        setRemoving(null);
+                        await load();
+                      }
+                    })
+                  }
+                >
+                  {busy ? 'Updating…' : removing.userId === member.id ? 'Leave group' : 'Remove member'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {page === 'settings' && owner && (
+        <div className="stack">
+          <form
+            className="stack"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                await renameGroup(group.id, name.trim());
+                await onChanged();
+                setNotice('Group name updated.');
+              });
+            }}
+          >
+            <label className="field">
+              <span>Group name</span>
+              <input value={name} disabled={busy} onChange={(e) => setName(e.target.value)} maxLength={120} />
+            </label>
+            <button className="align-start" type="submit" disabled={busy || !name.trim() || name.trim() === group.name}>
+              {busy ? 'Saving…' : 'Save name'}
+            </button>
+          </form>
+          {confirmDelete ? (
+            <div className="confirm-box">
+              <strong>Delete {group.name}?</strong>
+              <span className="note">Members lose access to this group. Its maps return to the people who made them, in My maps.</span>
+              <div className="confirm-actions">
+                <button disabled={busy} onClick={() => setConfirmDelete(false)}>
+                  Keep group
+                </button>
+                <button
+                  className="solid-danger"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await deleteGroup(group.id);
+                      await onGone();
+                    })
+                  }
+                >
+                  {busy ? 'Deleting…' : 'Delete group'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button className="danger flush align-start" onClick={() => setConfirmDelete(true)}>
+              <ITrash size={15} /> Delete group…
+            </button>
+          )}
+        </div>
+      )}
     </Modal>
   );
 }
 
-/** Admin only: invitation links for new people, optionally straight into one of your groups. */
-function InviteLinksDialog({ groups, initialGroup, onClose }: { groups: Group[]; initialGroup: string | null; onClose: () => void }) {
+export function InviteLinksDialog({ groups, initialGroup, onClose }: { groups: Group[]; initialGroup: string | null; onClose: () => void }) {
   const [note, setNote] = useState('');
   const [group, setGroup] = useState(initialGroup ?? '');
-  const [uses, setUses] = useState(20);
+  const [uses, setUses] = useState('20');
   const [links, setLinks] = useState<SignupLink[] | null>(null);
   const [fresh, setFresh] = useState<SignupLink | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
+  const receipt = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [withdrawing, setWithdrawing] = useState<SignupLink | null>(null);
   const load = useCallback(() => listSignupLinks().then(setLinks, (e) => setError(explain(e))), []);
   useEffect(() => void load(), [load]);
-  const copy = async (code: string) => {
-    try {
-      await navigator.clipboard.writeText(joinUrl(code));
-      setCopied(code);
-      window.setTimeout(() => setCopied(null), 1800);
-    } catch {
-      /* clipboard blocked: the field stays selectable */
-    }
-  };
+  useEffect(() => {
+    if (fresh) receipt.current?.focus();
+  }, [fresh]);
   const full = (l: SignupLink) => l.usedByNames.length >= l.maxUses;
-  const expired = (l: SignupLink) => updatedMs(l.expires) < Date.now();
+  const expired = (l: SignupLink) => updatedMs(l.expires) <= Date.now();
   const live = (l: SignupLink) => !full(l) && !expired(l);
-  const day = (iso: string) => new Date(updatedMs(iso)).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-  const status = (l: SignupLink) => {
-    const names = l.usedByNames.join(', ');
-    if (l.maxUses <= 1) return l.usedByNames.length ? `Used by ${names}` : expired(l) ? 'Expired, not used' : `One person · until ${day(l.expires)}`;
-    const until = expired(l) ? 'expired' : full(l) ? 'full' : `until ${day(l.expires)}`;
-    return `${l.usedByNames.length}/${l.maxUses} used · ${until}${names ? ` · ${names}` : ''}`;
-  };
+  const day = (iso: string) =>
+    new Date(updatedMs(iso)).toLocaleString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    });
+  const status = (l: SignupLink) => `${l.usedByNames.length} of ${l.maxUses} used · ${expired(l) ? 'Expired' : full(l) ? 'Full' : `Expires ${day(l.expires)}`}`;
   return (
-    <Modal title="Invite people" onClose={onClose} width={560}>
+    <Modal title="Invite to mind-the-dag" onClose={onClose} width={560} dismissible={!busy}>
       <div className="stack">
-        <p className="note">People sign up through the link, with GitHub or email. Links last 14 days and you can withdraw them. Nothing is emailed: share the link yourself.</p>
-        <form
-          className="stack tight"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            setError(null);
-            try {
-              const l = await createSignupLink(note, group || null, uses);
-              setFresh(l);
-              setNote('');
-              await load();
-              void copy(l.code);
-            } catch (err) {
-              setError(explain(err));
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <label className="field">
-            <span>Label (only you see it)</span>
-            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Lab meeting" maxLength={120} />
-          </label>
-          <div className="share-row">
-            <label className="field">
-              <span>Who can use it</span>
-              <select value={uses} onChange={(e) => setUses(Number(e.target.value))}>
-                <option value={20}>Up to 20 people</option>
-                <option value={1}>One person</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Also join group</span>
-              <select value={group} onChange={(e) => setGroup(e.target.value)}>
-                <option value="">No group</option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <button type="submit" className="primary align-start" disabled={busy}>
-            {busy ? 'Creating…' : 'Create invitation link'}
-          </button>
-        </form>
-        {fresh && (
-          <div className="share-row">
-            <input readOnly value={joinUrl(fresh.code)} onFocus={(e) => e.target.select()} aria-label="Invitation link" />
-            <button className="primary" onClick={() => void copy(fresh.code)}>
-              {copied === fresh.code ? 'Copied' : 'Copy'}
+        <p className="note">
+          Give new users access to mind-the-dag. They can register with GitHub, Google or email. To invite existing users into a group, use Invite members in
+          that group.
+        </p>
+        {fresh ? (
+          <div ref={receipt} tabIndex={-1} className="workflow-result">
+            <strong>Invitation link ready</strong>
+            <p className="note">
+              {fresh.note || 'Invitation link'} · {status(fresh)}
+            </p>
+            <p className="note">
+              {fresh.groupName
+                ? `Recipients also join ${fresh.groupName} and can edit its maps.`
+                : 'Recipients create their own private workspace and can start their own group.'}
+            </p>
+            <CopyLinkField key={fresh.code} url={joinUrl(fresh.code)} label="Invitation link" />
+            <p className="note">
+              Share this link yourself. No email has been sent. Withdrawing it prevents future registrations; registered accounts keep their access.
+            </p>
+            <button
+              className="align-start"
+              disabled={busy}
+              onClick={() => {
+                setFresh(null);
+                setError(null);
+              }}
+            >
+              Create another link
             </button>
           </div>
+        ) : (
+          <form
+            className="stack"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (busy) return;
+              setBusy(true);
+              setError(null);
+              try {
+                const l = await createSignupLink(note, group || null, Number(uses));
+                setFresh(l);
+                setNote('');
+                await load();
+              } catch (err) {
+                setError(explain(err));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <label className="field">
+              <span>Label (only you see it)</span>
+              <input disabled={busy} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Presentation · 9 November" maxLength={120} />
+            </label>
+            <div className="share-row">
+              <label className="field">
+                <span>Number of people</span>
+                <input type="number" min={1} max={20} step={1} required disabled={busy} value={uses} onChange={(e) => setUses(e.target.value)} />
+              </label>
+              <label className="field">
+                <span>Also join group</span>
+                <select disabled={busy} value={group} onChange={(e) => setGroup(e.target.value)}>
+                  <option value="">No group</option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <p className="note">
+              Valid for 14 days, for up to {uses || '20'} new users (maximum 20).{' '}
+              {group ? 'Recipients can edit all maps in the selected group.' : 'Recipients can create their own groups.'} No email is sent.
+            </p>
+            <button type="submit" className="primary align-start" disabled={busy || !Number.isInteger(Number(uses)) || Number(uses) < 1 || Number(uses) > 20}>
+              {busy ? 'Creating…' : 'Create invitation link'}
+            </button>
+          </form>
         )}
-        {error && <p className="note warn">{error}</p>}
+        {error && (
+          <p className="note warn" role="alert">
+            {error}
+          </p>
+        )}
+        {!links && !error && (
+          <p className="note" role="status">
+            Loading invitation links…
+          </p>
+        )}
+        {!links && error && (
+          <button
+            onClick={() => {
+              setError(null);
+              void load();
+            }}
+          >
+            Try again
+          </button>
+        )}
         {links && links.length > 0 && (
           <>
             <h3>Your links</h3>
@@ -1171,17 +1356,57 @@ function InviteLinksDialog({ groups, initialGroup, onClose }: { groups: Group[];
                     </div>
                   </div>
                   {live(l) && (
-                    <button className="small" onClick={() => void copy(l.code)}>
-                      {copied === l.code ? 'Copied' : 'Copy'}
+                    <button
+                      className="small"
+                      disabled={busy}
+                      onClick={() => {
+                        setFresh(l);
+                        setError(null);
+                      }}
+                    >
+                      Get link
                     </button>
                   )}
-                  <button className="small subtle" onClick={async () => (await deleteSignupLink(l.id).catch((e) => setError(explain(e))), await load())}>
+                  <button className="small subtle" disabled={busy} onClick={() => setWithdrawing(l)}>
                     {live(l) ? 'Withdraw' : 'Remove'}
                   </button>
                 </li>
               ))}
             </ul>
           </>
+        )}
+        {withdrawing && (
+          <div className="confirm-box" role="group" aria-label="Confirm invitation removal">
+            <strong>
+              {live(withdrawing) ? 'Withdraw' : 'Remove'} “{withdrawing.note || 'Invitation link'}”?
+            </strong>
+            <p className="note">This link will stop working for new registrations. People who already registered keep their accounts and group access.</p>
+            <div className="confirm-actions">
+              <button autoFocus disabled={busy} onClick={() => setWithdrawing(null)}>
+                Keep link
+              </button>
+              <button
+                className="solid-danger"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  setError(null);
+                  try {
+                    await deleteSignupLink(withdrawing.id);
+                    if (fresh?.id === withdrawing.id) setFresh(null);
+                    setWithdrawing(null);
+                    await load();
+                  } catch (e) {
+                    setError(explain(e));
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                {busy ? 'Removing…' : 'Remove link'}
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </Modal>

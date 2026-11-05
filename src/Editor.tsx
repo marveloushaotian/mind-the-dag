@@ -946,9 +946,9 @@ export default function Editor({
             label="Export"
             primary
             items={[
-              { label: 'SVG', onSelect: () => setExporting('svg') },
-              { label: 'PDF', onSelect: () => setExporting('pdf') },
-              { label: 'PNG', onSelect: () => setExporting('png') },
+              { label: 'SVG', hint: 'vector artwork', onSelect: () => setExporting('svg') },
+              { label: 'PDF', hint: 'papers & print', onSelect: () => setExporting('pdf') },
+              { label: 'PNG', hint: 'slides & images', onSelect: () => setExporting('png') },
               { label: 'Map file (.json)', hint: 'editable', onSelect: downloadMapFile },
             ]}
           />

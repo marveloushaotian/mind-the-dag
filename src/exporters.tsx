@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { Doc } from './model';
 import { MetroMap } from './render';
 import { tokens, type ThemeId } from './tokens';
+import { Modal } from './dialogs';
 
 /** Journal export: 1 px = 0.5 pt (spec §12). */
 export const PT_PER_PX = tokens.export.journal.pxToPt;
@@ -171,27 +172,42 @@ export function exportError(err: unknown): string {
   return `Export failed: ${message}`;
 }
 
-export function ExportDialog({ doc, theme, format, onClose, onDone }: { doc: Doc; theme: ThemeId; format: ExportFormat; onClose: () => void; onDone: (m: string) => void }) {
+export function ExportDialog({
+  doc,
+  theme,
+  format: initialFormat,
+  onClose,
+  onDone,
+}: {
+  doc: Doc;
+  theme: ThemeId;
+  format: ExportFormat;
+  onClose: () => void;
+  onDone: (m: string) => void;
+}) {
+  const [format, setFormat] = useState(initialFormat);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const [scale, setScale] = useState<'journal' | 'screen'>('journal');
   const [pngScale, setPngScale] = useState<'300' | '2x' | '1x'>('300');
   const [background, setBackground] = useState<Background>('transparent');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
     setSize(null);
     setError(null);
     buildSvg(doc, theme, { embedFonts: false })
-      .then((b) => { if (live) setSize({ w: b.width, h: b.height }); })
-      .catch((err: unknown) => { if (live) setError(exportError(err)); });
-    return () => { live = false; };
-  }, [doc, theme]);
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  }, [onClose]);
+      .then((b) => {
+        if (live) setSize({ w: b.width, h: b.height });
+      })
+      .catch((err: unknown) => {
+        if (live) setError(exportError(err));
+      });
+    return () => {
+      live = false;
+    };
+  }, [doc, theme, attempt]);
 
   const ptPerPx = scale === 'journal' ? PT_PER_PX : 0.75;
   const pngFactor = pngScale === '300' ? (300 / 72) * PT_PER_PX : pngScale === '2x' ? 2 : 1;
@@ -226,7 +242,7 @@ export function ExportDialog({ doc, theme, format, onClose, onDone }: { doc: Doc
   const Seg = <T extends string>({ value, set, options }: { value: T; set: (v: T) => void; options: [T, string][] }) => (
     <div className="seg">
       {options.map(([v, l]) => (
-        <button key={v} className={value === v ? 'on' : ''} onClick={() => set(v)}>
+        <button key={v} disabled={busy} aria-pressed={value === v} className={value === v ? 'on' : ''} onClick={() => set(v)}>
           {l}
         </button>
       ))}
@@ -234,42 +250,95 @@ export function ExportDialog({ doc, theme, format, onClose, onDone }: { doc: Doc
   );
 
   return (
-    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={`Export ${format.toUpperCase()}`}>
-        <h2>Export {format.toUpperCase()}</h2>
-        {format === 'pdf' && (
-          <div className="field">
-            <span>Scale</span>
-            <Seg value={scale} set={setScale} options={[['journal', 'Journal'], ['screen', 'Screen']]} />
-          </div>
-        )}
-        {format === 'png' && (
-          <div className="field">
-            <span>Resolution</span>
-            <Seg value={pngScale} set={setPngScale} options={[['300', '300 dpi'], ['2x', '2×'], ['1x', '1×']]} />
-          </div>
-        )}
-        {theme === 'light' && (
-          <div className="field">
-            <span>Background</span>
-            <Seg value={background} set={setBackground} options={[['transparent', 'Transparent'], ['white', 'White']]} />
-          </div>
-        )}
-        {summary && (
-          <p className="summary">
-            {summary}
-            {fit?.fits && ` · fits a ${fit.fits}`}
-          </p>
-        )}
-        {fit && !fit.fits && <p className="note">Larger than a journal double column (183 mm). This does not prevent export.</p>}
-        {error && <p className="note warn" role="alert">{error}</p>}
-        <div className="actions">
-          <button onClick={onClose}>Cancel</button>
-          <button className="primary" onClick={go} disabled={busy || !size}>
-            {busy ? 'Exporting…' : 'Export'}
-          </button>
+    <Modal title={`Export ${format.toUpperCase()}`} onClose={onClose} dismissible={!busy} width={460}>
+      <label className="field">
+        <span>File format</span>
+        <select
+          disabled={busy}
+          value={format}
+          onChange={(e) => {
+            setFormat(e.target.value as ExportFormat);
+            if (size) setError(null);
+          }}
+        >
+          <option value="pdf">PDF · Papers and print</option>
+          <option value="svg">SVG · Editable vector artwork</option>
+          <option value="png">PNG · Slides and images</option>
+        </select>
+      </label>
+      <p className="note">
+        {format === 'pdf'
+          ? 'Sharp at any size. Text stays selectable, and fonts are embedded.'
+          : format === 'svg'
+            ? 'Scales without losing detail. Edit the artwork in a vector graphics application.'
+            : 'An image for slides and documents. Choose a higher resolution for larger displays.'}
+      </p>
+      {format === 'pdf' && (
+        <div className="field">
+          <span>Scale</span>
+          <Seg
+            value={scale}
+            set={setScale}
+            options={[
+              ['journal', 'Journal'],
+              ['screen', 'Screen'],
+            ]}
+          />
         </div>
+      )}
+      {format === 'png' && (
+        <div className="field">
+          <span>Resolution</span>
+          <Seg
+            value={pngScale}
+            set={setPngScale}
+            options={[
+              ['300', '300 dpi'],
+              ['2x', '2×'],
+              ['1x', '1×'],
+            ]}
+          />
+        </div>
+      )}
+      {theme === 'light' && (
+        <div className="field">
+          <span>Background</span>
+          <Seg
+            value={background}
+            set={setBackground}
+            options={[
+              ['transparent', 'Transparent'],
+              ['white', 'White'],
+            ]}
+          />
+        </div>
+      )}
+      {summary && (
+        <p className="summary">
+          {summary}
+          {fit?.fits && ` · fits a ${fit.fits}`}
+        </p>
+      )}
+      {fit && !fit.fits && <p className="note">Larger than a journal double column (183 mm). This does not prevent export.</p>}
+      {error && (
+        <p className="note warn" role="alert">
+          {error}
+        </p>
+      )}
+      {error && !size && (
+        <button className="align-start" onClick={() => setAttempt((n) => n + 1)}>
+          Try again
+        </button>
+      )}
+      <p className="note">To reopen this map in mind-the-dag, use Export → Map file (.json).</p>
+      <div className="actions">
+        <button disabled={busy} onClick={onClose}>
+          Cancel
+        </button>
+        <button className="primary" onClick={go} disabled={busy || !size}>
+          {busy ? 'Exporting…' : 'Export'}
+        </button>
       </div>
-    </div>
+    </Modal>
   );
 }

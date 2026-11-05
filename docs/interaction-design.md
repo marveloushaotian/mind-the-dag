@@ -373,3 +373,22 @@ editor. Avatars, affiliation and biography remain optional future additions.
 | [IBM Carbon, Data table guidelines](https://www.carbondesignsystem.com/building-blocks/core/components/data-table/guidelines) | Distinct click targets for selection and row-specific actions. |
 | [W3C, Understanding WCAG 2.2 Target Size (Minimum)](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html) | Comfortable, separated targets rather than tiny ambiguous controls. |
 | [Yale, Memory-Free Interaction](https://usability.yale.edu/ux/best-practices/memory-free-interaction) | Keep active choices visible and instructions contextual. |
+
+## Workspace workflows
+
+See [Workflow design review](workflow-design-review.md) for the registration, group,
+sharing, export and modal navigation decisions and their primary references.
+
+## Cover-to-content transition
+
+The landing and invitation pages share the map's sea colour (#F4F7F5) as their
+page surface. On compact layouts, a 112 px bottom gradient reaches that exact
+colour before the separate map canvas ends. A 64 px top gradient also softens
+cropped geography below the header on compact and desktop layouts. These layers
+are decorative and do not intercept input or change the animation's camera.
+
+Authentication and invitation cards use a quiet white surface, light border and
+broad, low-opacity shadow. The desktop example retains its existing translucent
+surface. Text and controls keep their full opacity. Chrome checks at 320, 390,
+860, 861 and 1440 px confirmed that the invitation card fits without horizontal
+overflow and that the compact-to-desktop transition uses the same page colour.

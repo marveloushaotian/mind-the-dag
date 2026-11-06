@@ -579,7 +579,7 @@ button.subtle:hover:not(:disabled) { color: var(--ink); }
 @media (max-width: 900px) {
   .app > .topbar { height: auto !important; min-height: 52px; flex-wrap: wrap; row-gap: 6px; gap: 4px; padding: 8px 8px 8px 14px; }
   .app > .topbar .save-state, .app > .topbar .divider, .app > .topbar .place-pill { display: none; }
-  .app > .topbar .doc-title { flex: 1 1 80px; min-width: 0 !important; max-width: none; }
+  .app > .topbar .doc-title { flex: 1 1 40px; min-width: 0 !important; max-width: none; }
   .app > .topbar .spacer { display: none; }
   .app > .topbar .group { gap: 4px; flex-wrap: wrap; }
   .app > .topbar .group button { padding-inline: 8px; }
@@ -589,3 +589,52 @@ button.subtle:hover:not(:disabled) { color: var(--ink); }
 
 .recovery-entry { margin-top: 12px; }
 .recovery-list .callout { flex-wrap: wrap; overflow-wrap: anywhere; }
+
+/* Finger-sized controls and safe-area spacing without reducing the desktop canvas. */
+.touch-hint { color: var(--muted); font-size: var(--text-note); }
+@media (max-width: 900px) {
+  .app > .topbar button, .viewer > .topbar button { min-height: 44px; }
+  .app > .topbar button.icon, .viewer > .topbar button.icon { min-width: 44px; }
+  .compact-tool-details > button, .compact-kind select { min-height: 44px; }
+  .zoom button.icon, .stage > .float.left-bottom > button.icon { width: 44px; height: 44px; }
+  .float.right-bottom, .float.left-bottom { bottom: max(12px, env(safe-area-inset-bottom)); }
+  .drawing-guidance { bottom: calc(68px + env(safe-area-inset-bottom)); }
+  .drawing-guidance button { min-height: 44px; }
+  .compact-editor-panel :is(input:not([type="checkbox"]):not([type="color"]), textarea, select), .app .doc-title { font-size: 16px; }
+  .compact-editor-panel :is(input:not([type="checkbox"]), select, button) { min-height: 44px; }
+  .viewer { grid-template-rows: auto minmax(0, 1fr); }
+  .viewer > .topbar { flex-wrap: wrap; padding-block: 8px; }
+  .viewer .view-title { flex: 1 1 90px; }
+  .viewer .view-byline { width: 100%; }
+  .viewer .topbar .divider { display: none; }
+}
+/* Landscape phones keep drawing tools in a single row to preserve working height. */
+@media (max-width: 900px) and (max-height: 500px) and (orientation: landscape) {
+  .compact-tools { position: relative; display: flex; align-items: center; gap: 8px; padding-block: 4px; }
+  .compact-tool-choices { flex: 1; }
+  .compact-tool-choices button { height: 44px; flex-direction: row; }
+  .compact-tool-details { margin: 0; flex: 1; }
+  .compact-tool-footer { margin: 0; }
+  .compact-tool-footer .touch-hint, .compact-kind > span { display: none; }
+  .compact-save { position: absolute; top: calc(100% + 6px); right: 12px; z-index: 2; padding: 0 6px; border-radius: 4px; background: var(--panel); }
+  .drawing-guidance { left: 64px; right: 214px; bottom: 12px; transform: none; width: auto; max-width: none; }
+}
+
+@media (max-width: 380px) {
+  .app > .topbar .group button { padding-inline: 6px; font-size: 14px; }
+}
+@media (max-width: 900px) {
+  .app, .viewer { height: 100dvh; }
+  .modal { max-height: calc(100dvh - 32px); }
+  .modal-head button.icon { width: 44px; min-width: 44px; height: 44px; }
+}
+@media (max-width: 700px) and (max-height: 500px) and (orientation: landscape) {
+  .compact-tool-choices { min-width: 220px; }
+  .compact-tool-choices button { font-size: 12px; padding-inline: 1px; }
+  .compact-tool-choices button svg { display: none; }
+  .compact-tool-details { min-width: 0; gap: 4px; }
+  .compact-tool-details > button { padding-inline: 6px; font-size: 13px; }
+  .compact-lines { min-width: 44px; }
+  .compact-lines > svg { display: none; }
+  .compact-kind select { width: 70px; }
+}

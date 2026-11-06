@@ -8,7 +8,8 @@ import { createStation, derive, emptyDoc, mergeStations, pruneLines, snap, snapS
 import { Inspector, LeftRail, TOOLS, type Tool } from './panels';
 import { edgeGeometry, MetroMap, reserveAutoLegend } from './render';
 import { useDocument } from './store';
-import { usePanZoom } from './panzoom';
+import { MAX_ZOOM, MIN_ZOOM, usePanZoom } from './panzoom';
+import { useTouchNavigation } from './useTouchNavigation';
 import { lineStyle, tints, tokens, type ThemeId } from './tokens';
 import { Menu, Wordmark } from './ui';
 import { Modal, ShareDialog, ShortcutsDialog } from './dialogs';
@@ -221,13 +222,17 @@ export default function Editor({
       setView({ x: -r.width / 2, y: -r.height / 2, k: 1 });
       return;
     }
-    const k = Math.min(1.5, Math.max(0.25, Math.min((r.width - 96) / b.width, (r.height - 96) / b.height)));
-    setView({ k, x: b.x - (r.width / k - b.width) / 2, y: b.y - (r.height / k - b.height) / 2 });
+    const narrow = window.matchMedia('(max-width: 900px)').matches;
+    const guidance = svg.parentElement?.querySelector('.drawing-guidance')?.getBoundingClientRect();
+    const height = narrow ? Math.max(80, guidance?.height ? guidance.top - r.top - 12 : r.height - 68) : r.height;
+    const padding = narrow ? 32 : 96;
+    const k = Math.min(1.5, Math.max(MIN_ZOOM, Math.min((r.width - padding) / b.width, (height - padding) / b.height)));
+    setView({ k, x: b.x - (r.width / k - b.width) / 2, y: b.y - (height / k - b.height) / 2 });
   }, []);
 
   const zoomBy = (f: number) => {
     const r = svgRef.current!.getBoundingClientRect();
-    const k2 = Math.min(4, Math.max(0.25, view.k * f));
+    const k2 = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, view.k * f));
     const cx = view.x + r.width / 2 / view.k;
     const cy = view.y + r.height / 2 / view.k;
     setView({ k: k2, x: cx - r.width / 2 / k2, y: cy - r.height / 2 / k2 });
@@ -496,6 +501,7 @@ export default function Editor({
       if (e.key === ' ') setSpace(false);
     };
     const onBlur = () => {
+      touchTap.current = null; touchNavigation.reset();
       setSpace(false);
       if (drag) cancelGesture();
       else clearPointer();
@@ -521,21 +527,33 @@ export default function Editor({
     return { kind, id };
   };
 
-  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+  const touchTap = useRef<{ target: EventTarget; x: number; y: number; moved: boolean } | null>(null);
+  const touchNavigation = useTouchNavigation(view, setView, () => {
+    touchTap.current = null;
+    lastDown.current = null;
+    cancelGesture();
+  });
+  const cancelPointer = (e: React.PointerEvent<SVGSVGElement>) => { touchTap.current = null; touchNavigation.up(e); cancelGesture(); };
+
+  const beginEdit = (e: React.PointerEvent<SVGSVGElement>, target = e.target) => {
     if (e.button !== 0 && e.button !== 1) return;
     lastClient.current = { x: e.clientX, y: e.clientY };
     // Keep focus where we put it (e.g. the inline name editor) and close any field being typed in.
     e.preventDefault();
     // Clicking the canvas commits an open name editor (via blur) and carries on.
     (document.activeElement as HTMLElement | null)?.blur?.();
-    (e.currentTarget as Element).setPointerCapture(e.pointerId);
     const w = toWorld(e.clientX, e.clientY);
     if (e.button === 1 || space.current) {
       clearPointer();
       setDrag({ kind: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y });
       return;
     }
-    const h = hit(e.target);
+    let h = hit(target);
+    if (e.pointerType === 'touch' && tool === 'select' && h?.kind !== 'station'
+      && !(target as Element).hasAttribute?.('data-handle') && !(target as Element).hasAttribute?.('data-bend')) {
+      const nearby = snapTarget(doc, derived, w, view.k, null, null, 22);
+      if (nearby) h = { kind: 'station', id: nearby.id };
+    }
     // On touch screens, dragging empty space moves the canvas; drawing tools keep their explicit gesture.
     if (e.pointerType === 'touch' && tool === 'select' && !h) {
       clearPointer();
@@ -594,9 +612,9 @@ export default function Editor({
 
     clearAlignment();
 
-    const handle = (e.target as Element).getAttribute?.('data-handle');
+    const handle = (target as Element).getAttribute?.('data-handle');
 
-    const bendHandle = (e.target as Element).getAttribute?.('data-bend');
+    const bendHandle = (target as Element).getAttribute?.('data-bend');
     if (bendHandle && bendInfo) {
       dragTargets.current = stationAlignmentTargets(doc, [], bendHandle, true);
       setDrag({ kind: 'bend', id: bendHandle, A: bendInfo.A, B: bendInfo.B, at: bendInfo.at,
@@ -631,7 +649,7 @@ export default function Editor({
     const key = `${h.kind}:${h.id}`;
     // Double-click (two presses on the same station within 400 ms) renames it.
     const now = performance.now();
-    if (h.kind === 'station' && lastDown.current && lastDown.current.key === key && now - lastDown.current.at < 400) {
+    if (e.pointerType !== 'touch' && h.kind === 'station' && lastDown.current && lastDown.current.key === key && now - lastDown.current.at < 400) {
       lastDown.current = null;
       setSelected(new Set([key]));
       setRenameTarget(h.id);
@@ -671,7 +689,25 @@ export default function Editor({
     }
   };
 
+  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.button !== 0 && e.button !== 1) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    if (touchNavigation.down(e)) return;
+    // Placement and connection commit on release, so a second finger cannot add a stray edit.
+    if (e.pointerType === 'touch' && (tool === 'station' || tool === 'line')) {
+      touchTap.current = { target: e.target, x: e.clientX, y: e.clientY, moved: false };
+      return;
+    }
+    beginEdit(e);
+  };
+
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (touchNavigation.move(e)) return;
+    if (touchTap.current) {
+      if (Math.hypot(e.clientX - touchTap.current.x, e.clientY - touchTap.current.y) > 8) touchTap.current.moved = true;
+      return;
+    }
     lastClient.current = { x: e.clientX, y: e.clientY };
     if ((tool === 'line' || tool === 'station') && !drag && !space.current) {
       const point = toWorld(e.clientX, e.clientY);
@@ -703,7 +739,7 @@ export default function Editor({
     if (drag.kind === 'bend') {
       if (!drag.moved) {
         const distance = (drag.axis === 'h' ? w.x - drag.at.x : w.y - drag.at.y) - drag.grab;
-        if (Math.abs(distance) * view.k < 3) return;
+        if (Math.abs(distance) * view.k < (e.pointerType === 'touch' ? 8 : 3)) return;
         cancelDragRef.current = checkpoint();
         setDrag({ ...drag, moved: true });
       }
@@ -736,7 +772,7 @@ export default function Editor({
     const dx = w.x - drag.start.x;
     const dy = w.y - drag.start.y;
     if (!drag.moved) {
-      if (Math.hypot(dx, dy) * view.k < 3) return;
+      if (Math.hypot(dx, dy) * view.k < (e.pointerType === 'touch' ? 8 : 3)) return;
       cancelDragRef.current = checkpoint();
       setDrag({ ...drag, moved: true });
       // The title stays fixed; automatic legends keep clearing the growing map.
@@ -830,7 +866,15 @@ export default function Editor({
   const mergePreview = useMemo(() => mergingStation && mergeTarget
     ? previewStationMerge(doc, mergingStation.id, mergeTarget.id) : null, [doc, mergingStation, mergeTarget]);
 
-  const onPointerUp = () => {
+  const onPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (touchNavigation.up(e)) { touchTap.current = null; return; }
+    if (e.pointerType === 'touch' && drag?.kind === 'pan' && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) <= 8) setSelected(new Set());
+    const tap = touchTap.current;
+    touchTap.current = null;
+    if (tap) {
+      if (!tap.moved && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) <= 8) beginEdit(e, tap.target);
+      return;
+    }
     if (drag?.kind === 'stations' && mergeTarget) {
       const from = drag.ids[0];
       const into = mergeTarget;
@@ -857,7 +901,7 @@ export default function Editor({
     clearDrag();
   };
 
-  usePanZoom(svgRef, setView, lastClient);
+  usePanZoom(svgRef, setView, lastClient, touchNavigation.active);
 
   // Rename and property edits share one field in the inspector.
   useLayoutEffect(() => {
@@ -1021,8 +1065,8 @@ export default function Editor({
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerLeave={clearPointer}
-            onPointerCancel={cancelGesture}
-            onLostPointerCapture={() => { if (cancelDragRef.current) cancelGesture(); }}
+            onPointerCancel={cancelPointer}
+            onLostPointerCapture={(e) => { if (touchNavigation.up(e) || cancelDragRef.current) cancelPointer(e); }}
           >
             <defs>
               <pattern id="grid" width={16 * view.k} height={16 * view.k} patternUnits="userSpaceOnUse" x={-view.x * view.k} y={-view.y * view.k}>

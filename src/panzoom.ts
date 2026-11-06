@@ -1,5 +1,8 @@
 import { useEffect, type Dispatch, type MutableRefObject, type RefObject, type SetStateAction } from 'react';
 
+export const MIN_ZOOM = 0.1;
+export const MAX_ZOOM = 4;
+
 export interface View {
   x: number;
   y: number;
@@ -16,6 +19,7 @@ export function usePanZoom(
   svgRef: RefObject<SVGSVGElement | null>,
   setView: Dispatch<SetStateAction<View>>,
   lastClient: MutableRefObject<{ x: number; y: number }>,
+  touchActive?: () => boolean,
 ) {
   useEffect(() => {
     const svg = svgRef.current;
@@ -23,7 +27,7 @@ export function usePanZoom(
     const zoomAt = (clientX: number, clientY: number, factor: number) =>
       setView((v) => {
         const r = svg.getBoundingClientRect();
-        const k2 = Math.min(4, Math.max(0.25, v.k * factor));
+        const k2 = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.k * factor));
         const mx = v.x + (clientX - r.left) / v.k;
         const my = v.y + (clientY - r.top) / v.k;
         return { k: k2, x: mx - (clientX - r.left) / k2, y: my - (clientY - r.top) / k2 };
@@ -58,12 +62,12 @@ export function usePanZoom(
       e.preventDefault();
       last = 1;
       const g = e as Event & { clientX?: number; clientY?: number };
-      overCanvas = inside(g.clientX ?? lastClient.current.x, g.clientY ?? lastClient.current.y);
+      overCanvas = !touchActive?.() && inside(g.clientX ?? lastClient.current.x, g.clientY ?? lastClient.current.y);
     };
     const onGestureChange = (e: Event) => {
       e.preventDefault();
       const g = e as Event & { scale: number; clientX?: number; clientY?: number };
-      if (overCanvas) zoomAt(g.clientX ?? lastClient.current.x, g.clientY ?? lastClient.current.y, g.scale / last);
+      if (overCanvas && !touchActive?.()) zoomAt(g.clientX ?? lastClient.current.x, g.clientY ?? lastClient.current.y, g.scale / last);
       last = g.scale;
     };
     const onGestureEnd = (e: Event) => e.preventDefault();

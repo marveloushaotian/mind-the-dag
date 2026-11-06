@@ -21,8 +21,8 @@ const button = (name: string) => {
   return target;
 };
 const click = async (name: string) => { await act(async () => button(name).click()); };
-const pointer = async (element: Element, type: string, x: number, y: number, pointerType = 'touch') => {
-  await act(async () => element.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType, clientX: x, clientY: y })));
+const pointer = async (element: Element, type: string, x: number, y: number, pointerType = 'touch', pointerId = 1) => {
+  await act(async () => element.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId, pointerType, clientX: x, clientY: y })));
 };
 const tap = async (element: Element, x: number, y: number) => { await pointer(element, 'pointerdown', x, y); await pointer(element, 'pointerup', x, y); };
 async function fill(input: HTMLInputElement | HTMLTextAreaElement, text: string) {
@@ -110,7 +110,8 @@ describe('independent first-map journey', () => {
 
   it('keeps selected properties available after a two-press rename gesture', async () => {
     await mount(); await click('Add stations'); await tap(canvas(), 80, 400); await click('Done');
-    await tap(stations()[0], 80, 400); await tap(stations()[0], 80, 400);
+    await pointer(stations()[0], 'pointerdown', 80, 400, 'mouse'); await pointer(stations()[0], 'pointerup', 80, 400, 'mouse');
+    await pointer(stations()[0], 'pointerdown', 80, 400, 'mouse'); await pointer(stations()[0], 'pointerup', 80, 400, 'mouse');
     expect(host.querySelector('[role=dialog]')?.getAttribute('aria-label')).toBe('Selection properties');
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Station name');
   });
@@ -180,5 +181,105 @@ describe('honest save feedback', () => {
     expect(host.querySelector('[role="alert"]')).toBeNull();
     expect(host.querySelector('.save-state')?.textContent).toBe('Saved in this browser');
     vi.useRealTimers();
+  });
+});
+
+
+describe('phone multi-touch navigation', () => {
+  const transform = () => canvas().querySelector(':scope > g')!.getAttribute('transform')!;
+  const touch = (type: string, id: number, x: number, y: number, target: Element = canvas()) => pointer(target, type, x, y, 'touch', id);
+
+  it('zooms around the finger midpoint and pans without changing the document', async () => {
+    await mount(); await click('Use an example');
+    const before = transform();
+    const count = stations().length;
+    await touch('pointerdown', 1, 100, 400);
+    await touch('pointerdown', 2, 200, 400);
+    await touch('pointermove', 1, 50, 400);
+    await touch('pointermove', 2, 250, 400);
+    expect(transform()).not.toBe(before);
+    const zoom = Number(transform().match(/scale\(([^)]+)/)![1]);
+    const initialZoom = Number(before.match(/scale\(([^)]+)/)![1]);
+    expect(zoom).toBeCloseTo(initialZoom * 2);
+    // One remaining finger cannot pick up an object or resume an old drag.
+    await touch('pointerup', 2, 250, 400);
+    const stopped = transform();
+    await touch('pointermove', 1, 100, 450);
+    expect(transform()).toBe(stopped);
+    await touch('pointerup', 1, 100, 450);
+    expect(stations()).toHaveLength(count);
+    await click('Undo');
+    expect(stations()).toHaveLength(0); // Navigation introduced no history entry.
+  });
+
+  it.each(['Station', 'Connect', 'Section'])('pinches in %s mode without placing, connecting or creating a section', async (tool) => {
+    await mount(); await click('Use an example'); await click(tool);
+    const count = stations().length;
+    const edges = host.querySelectorAll('[data-sel^="edge:"]').length;
+    const sections = host.querySelectorAll('[data-sel^="section:"]').length;
+    await touch('pointerdown', 1, 80, 400);
+    await touch('pointerdown', 2, 200, 400);
+    await touch('pointermove', 2, 280, 450);
+    await touch('pointerup', 1, 80, 400);
+    await touch('pointerup', 2, 280, 450);
+    expect(stations()).toHaveLength(count);
+    expect(host.querySelectorAll('[data-sel^="edge:"]')).toHaveLength(edges);
+    expect(host.querySelectorAll('[data-sel^="section:"]')).toHaveLength(sections);
+    await click('Undo'); expect(stations()).toHaveLength(0);
+  });
+
+  it('restores an interrupted station drag when a second finger begins navigation', async () => {
+    await mount(); await click('Add stations'); await tap(canvas(), 80, 400); await click('Done');
+    const station = stations()[0];
+    const before = station.querySelector('.station-glyph')!.parentElement!.getAttribute('transform');
+    await touch('pointerdown', 1, 80, 400, station);
+    await touch('pointermove', 1, 110, 420);
+    await touch('pointerdown', 2, 200, 400);
+    await touch('pointerup', 2, 200, 400);
+    await touch('pointerup', 1, 110, 420);
+    expect(stations()[0].querySelector('.station-glyph')!.parentElement!.getAttribute('transform')).toBe(before);
+    await click('Undo'); expect(stations()).toHaveLength(0);
+  });
+
+  it('acquires a small station near a finger, ignores jitter, and keeps quick taps out of the keyboard', async () => {
+    await mount(); await click('Add stations'); await tap(canvas(), 80, 400); await click('Done');
+    const position = stations()[0].querySelector('.station-glyph')!.parentElement!.getAttribute('transform');
+    await touch('pointerdown', 1, 96, 400);
+    await touch('pointermove', 1, 100, 403);
+    await touch('pointerup', 1, 100, 403);
+    await touch('pointerdown', 1, 96, 400); await touch('pointerup', 1, 96, 400);
+    expect(host.querySelector('[role=dialog]')).toBeNull();
+    expect(stations()[0].querySelector('.station-glyph')!.parentElement!.getAttribute('transform')).toBe(position);
+    await click('Open properties');
+    expect(host.querySelector('[aria-label="Station name"]')).not.toBeNull();
+    await click('Back to canvas');
+    await tap(canvas(), 300, 700);
+    await click('Open properties');
+    expect(host.querySelector('[aria-label="Station name"]')).toBeNull();
+  });
+
+  it('does not commit a cancelled or dragged touch placement and accepts the next tap', async () => {
+    await mount(); await click('Add stations');
+    await touch('pointerdown', 1, 80, 400);
+    await touch('pointermove', 1, 130, 400);
+    await touch('pointerup', 1, 130, 400);
+    expect(stations()).toHaveLength(0);
+    await touch('pointerdown', 1, 80, 400);
+    await touch('pointercancel', 1, 80, 400);
+    await touch('pointerup', 1, 80, 400);
+    expect(stations()).toHaveLength(0);
+    await tap(canvas(), 80, 400); expect(stations()).toHaveLength(1);
+  });
+
+  it('keeps a pinch locked after normal capture loss and releases cleanly after cancellation', async () => {
+    await mount(); await click('Add stations');
+    await touch('pointerdown', 1, 80, 400);
+    await touch('pointerdown', 2, 200, 400);
+    await touch('pointerup', 2, 200, 400);
+    await touch('lostpointercapture', 2, 200, 400);
+    await touch('pointermove', 1, 90, 410);
+    await touch('pointercancel', 1, 90, 410);
+    expect(stations()).toHaveLength(0);
+    await tap(canvas(), 80, 400); expect(stations()).toHaveLength(1);
   });
 });

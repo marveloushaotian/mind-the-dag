@@ -11,12 +11,12 @@ function markerDistance(s: Station, dv: Derived, p: Pt, zoom: number): number {
 }
 
 /** Keep a target until the pointer leaves its larger release area, avoiding flicker. */
-export function snapTarget(doc: Doc, dv: Derived, point: Pt, zoom: number, previous: string | null, exclude: string | null = null): Station | null {
+export function snapTarget(doc: Doc, dv: Derived, point: Pt, zoom: number, previous: string | null, exclude: string | null = null, radius = SNAP_ENTER): Station | null {
   const eligible = (s: Station) => s.id !== exclude;
   const held = previous ? dv.byId.get(previous) : undefined;
   if (held && eligible(held) && markerDistance(held, dv, point, zoom) <= SNAP_LEAVE) return held;
   let nearest: Station | null = null;
-  let distance = SNAP_ENTER;
+  let distance = radius;
   for (const s of doc.stations) {
     if (!eligible(s)) continue;
     const d = markerDistance(s, dv, point, zoom);
@@ -34,7 +34,7 @@ export function connectionTarget(doc: Doc, dv: Derived, point: Pt, zoom: number,
 }): Station | null {
   const hit = pointer.hitId ? dv.byId.get(pointer.hitId) : undefined;
   const acquired = pointer.pointerType === 'mouse' && pointer.hoverId ? dv.byId.get(pointer.hoverId) : undefined;
-  return hit ?? acquired ?? snapTarget(doc, dv, point, zoom, pointer.hoverId, pointer.sourceId);
+  return hit ?? acquired ?? snapTarget(doc, dv, point, zoom, pointer.pointerType === 'touch' ? null : pointer.hoverId, pointer.sourceId, pointer.pointerType === 'touch' ? 22 : SNAP_ENTER);
 }
 
 export interface ConnectionChange {

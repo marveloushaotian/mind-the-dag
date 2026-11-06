@@ -459,3 +459,27 @@ recovery and revoked membership. Never run these fixtures against production.
 The Pages deployment waits for the public backend capability check before
 publishing these controls. If the backend rollout is delayed or fails, the
 existing website remains online rather than serving an incompatible frontend.
+
+### Touch editing and shared-map navigation
+
+- One finger selects or drags an object; blank canvas pans in Select mode. Touch
+  movement has an 8 CSS-pixel threshold before changing an object, and nearby
+  station selection uses screen-space distance rather than a shrinking SVG hit area.
+- Two fingers move and zoom the canvas in every drawing mode and in the read-only
+  viewer. The point under the midpoint stays anchored as the fingers spread or
+  move. An in-progress object drag is cancelled with its undo checkpoint restored.
+- Touch placement and connection commit on release. A second finger, cancellation
+  or dragged tap cannot create a stray station, connection or section. A remaining
+  finger stays in navigation mode until all fingers lift. Capture loss, focus loss,
+  a third finger and Safari gesture events do not resume stale document edits.
+- Touch users edit names through Properties; quick repeated taps do not unexpectedly
+  open the keyboard. Desktop double-click renaming and wheel navigation remain.
+- Compact controls use finger-sized primary targets. Landscape phones use a
+  shallower tool row, while narrow portrait headers avoid excess wrapping. Fit to
+  screen reserves room for guidance and zoom controls; all zoom methods share the
+  10–400% range. Input text is 16px in compact properties to avoid iOS focus zoom.
+
+Validation covers camera anchoring, zoom limits, interrupted gestures, touch
+placement/selection, undo preservation, shared viewing and desktop wheel behavior.
+Browser checks use Chrome touch input simulation and portrait/landscape viewport
+sizes; these checks do not substitute for physical iOS or Android device testing.

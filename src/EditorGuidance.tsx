@@ -28,6 +28,7 @@ export function CompactTools({ doc, tool, active, theme, stationKind, setTool, s
           <option value="step">Step</option><option value="merge">Merge</option><option value="start">Start</option><option value="stop">Stop</option>
         </select>
       </label>}
+      <span className="touch-hint">Two fingers to move &amp; zoom</span>
       <span className="compact-save">{saveState}</span>
     </div>
   </div>;
@@ -78,7 +79,7 @@ export function DrawingGuidance({ doc, tool, selected, source, target, active, c
   } else if (doc.stations.some((station) => !station.label.trim())) {
     message = compact ? 'Select a station, then open Properties to give it a name.' : 'Select a station to give it a name in the properties panel.';
   } else {
-    message = compact ? 'Drag blank canvas to pan. Use + and − to zoom.' : 'Select a station, connection or section to edit its properties.';
+    message = compact ? 'Drag blank canvas to pan. Pinch with two fingers to zoom.' : 'Select a station, connection or section to edit its properties.';
   }
   return <div className="drawing-guidance" aria-label="Drawing guidance">
     <span role="status">{message}</span>

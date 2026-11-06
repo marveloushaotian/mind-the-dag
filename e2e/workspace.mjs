@@ -220,6 +220,7 @@ try {
   await B.getByRole('button', { name: 'Nordic', exact: true }).click();
   await B.getByLabel('Map title').focus();
   await B.getByRole('button', { name: /all maps/ }).click();
+  await B.locator('.side-item', { hasText: 'Lab' }).click();
   await B.locator('.card-title', { hasText: 'Group map' }).waitFor();
   await sleep(1800);
   const afterViewing = await api(groupRecordPath, {}, su);

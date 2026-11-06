@@ -34,7 +34,7 @@ describe('drafts that left this browser', () => {
     const a = metagenomeExample();
     const id = createMap(a);
     retireMap(id, 'cloud123');
-    saveMap(id, { ...a, title: 'late edit' });
+    expect(() => saveMap(id, { ...a, title: 'late edit' })).toThrow('moved or deleted');
     expect(listMaps()).toHaveLength(0);
     expect(loadMap(id)).toBeNull();
     expect(goneTo(id)).toBe('cloud123');
@@ -42,8 +42,43 @@ describe('drafts that left this browser', () => {
   it('nor a deleted one', () => {
     const id = createMap(metagenomeExample());
     deleteMap(id);
-    saveMap(id, metagenomeExample());
+    expect(() => saveMap(id, metagenomeExample())).toThrow('moved or deleted');
     expect(listMaps()).toHaveLength(0);
     expect(goneTo(id)).toBeNull();
+  });
+});
+
+describe('save failures and recently deleted', () => {
+  beforeEach(() => { (globalThis as { localStorage?: unknown }).localStorage = new MemStorage(); });
+  it('reports failed writes instead of pretending the map was saved', () => {
+    const doc = metagenomeExample();
+    const id = createMap(doc);
+    localStorage.setItem = () => { throw new Error('Quota exceeded'); };
+    expect(() => saveMap(id, { ...doc, title: 'Unsaved title' })).toThrow('Could not save');
+    expect(loadMap(id)?.title).toBe(doc.title);
+  });
+  it('reports an index failure even when the document write succeeded', () => {
+    const original = localStorage.setItem.bind(localStorage);
+    localStorage.setItem = (key, value) => { if (key.endsWith(':index')) throw new Error('Full'); original(key, value); };
+    expect(() => createMap(metagenomeExample())).toThrow('map list');
+  });
+  it('restores the same map and contents without creating a duplicate', async () => {
+    const { listDeletedMaps, restoreMap } = await import('./library');
+    const doc = metagenomeExample(); const id = createMap(doc);
+    deleteMap(id);
+    expect(listMaps()).toHaveLength(0);
+    expect(loadMap(id)).toBeNull();
+    expect(listDeletedMaps().map(m => m.id)).toEqual([id]);
+    expect(() => saveMap(id, { ...doc, title: 'Stale tab' })).toThrow('moved or deleted');
+    restoreMap(id);
+    expect(listMaps().map(m => m.id)).toEqual([id]);
+    expect(loadMap(id)).toEqual(doc);
+    expect(listDeletedMaps()).toHaveLength(0);
+  });
+  it('does not delete a map when storage is unavailable', async () => {
+    const id = createMap(metagenomeExample());
+    localStorage.setItem = () => { throw new Error('Blocked'); };
+    expect(() => deleteMap(id)).toThrow('Recently deleted');
+    expect(listMaps()).toHaveLength(1);
   });
 });

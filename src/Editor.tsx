@@ -64,15 +64,22 @@ export default function Editor({
   /** Local maps, signed in: move this map into My maps. */
   onMoveToCloud?: () => Promise<void>;
 }) {
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [savedDoc, setSavedDoc] = useState<Doc>(initial);
   const store = useDocument(
     () => initial,
     (d) => {
-      onSave(d);
-      setSavedDoc(d);
+      try { onSave(d); setSavedDoc(d); setSaveError(null); }
+      catch (e) { setSaveError(e instanceof Error ? e.message : "Could not save this map."); }
     },
   );
   const { doc, update, preview, checkpoint, undo, redo, replace } = store;
+  useEffect(() => {
+    if (saveState || (!saveError && doc === savedDoc)) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [saveError, doc, savedDoc, saveState]);
   const [tool, setToolState] = useState<Tool>('select');
   const [stationKind, setStationKind] = useState<StationKind>('step');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -254,10 +261,16 @@ export default function Editor({
   useEffect(() => {
     titleAtFocus.current = doc.title;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const newMap = () => onCreate(emptyDoc());
-  const openExample = () => onCreate(metagenomeExample());
+  const saveBeforeLeaving = () => {
+    if (saveState || (!saveError && doc === savedDoc)) return true;
+    try { onSave(doc); setSavedDoc(doc); setSaveError(null); return true; }
+    catch (e) { setSaveError(e instanceof Error ? e.message : 'Could not save. Download your changes before leaving.'); return false; }
+  };
+  const newMap = () => { if (saveBeforeLeaving()) onCreate(emptyDoc()); };
+  const openExample = () => { if (saveBeforeLeaving()) onCreate(metagenomeExample()); };
   const downloadMapFile = () => download(`${slug(doc.title)}.json`, new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }));
   const openFile = async (f: File) => {
+    if (!saveBeforeLeaving()) return;
     try {
       // A drafts backup restores into the library and returns to the start page.
       try {
@@ -393,9 +406,8 @@ export default function Editor({
         return;
       }
       if (mod && e.key.toLowerCase() === 's') {
-        // Maps save themselves; ⌘S just confirms it.
         e.preventDefault();
-        flash(place.kind === 'local' ? 'Your map saves automatically in this browser.' : 'Your map saves automatically. Check the save status above.');
+        if (saveBeforeLeaving()) flash(place.kind === 'local' ? 'Saved in this browser.' : 'Your map saves automatically. Check the save status above.');
         return;
       }
       if (!typing && !mod && e.key === '?') {
@@ -899,13 +911,13 @@ export default function Editor({
     onDelete={() => { deleteSelection(); setCompactPanel(null); }}
     placement={tool === 'station' ? { kind: stationKind, setKind: setStationKind } : undefined} />;
   const saveIndicator = saveState ?? <span className="save-state" title="Maps are saved automatically in this browser">
-    {savedDoc === doc ? compact ? 'Saved in this browser' : 'Saved' : 'Saving…'}
+    {saveError ? 'Not saved' : savedDoc === doc ? compact ? 'Saved in this browser' : 'Saved' : 'Saving…'}
   </span>;
 
   return (
     <div className={`app${dark ? ' dark' : ''}`}>
       <header className="topbar">
-        <button className="brand-btn" onClick={onHome} title="All maps" aria-label="mind-the-dag: all maps">
+        <button className="brand-btn" onClick={() => { if (saveBeforeLeaving()) onHome(); }} title="All maps" aria-label="mind-the-dag: all maps">
           <Wordmark />
         </button>
         <span className="divider" aria-hidden="true" />
@@ -977,6 +989,10 @@ export default function Editor({
       </header>
 
       {banner}
+      {saveError && <div className="banner warn" role="alert"><span>{saveError}</span>
+        <button onClick={() => { try { onSave(doc); setSavedDoc(doc); setSaveError(null); } catch (e) { setSaveError(e instanceof Error ? e.message : 'Could not save.'); } }}>Retry saving</button>
+        <button onClick={downloadMapFile}>Download map file</button>
+      </div>}
       {compact && <CompactTools doc={doc} tool={tool} active={selectedLine} theme={theme} stationKind={stationKind}
         saveState={saveIndicator}
         setTool={setTool} setStationKind={setStationKind} propertiesOpen={compactPanel === 'properties'}

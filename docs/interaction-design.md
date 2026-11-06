@@ -424,3 +424,38 @@ broad, low-opacity shadow. The desktop example retains its existing translucent
 surface. Text and controls keep their full opacity. Chrome checks at 320, 390,
 860, 861 and 1440 px confirmed that the invitation card fits without horizontal
 overflow and that the compact-to-desktop transition uses the same page colour.
+
+## Saving and recovery
+
+Local save feedback follows the result of both document and map-list writes.
+Failures retain the current drawing, show Retry saving and Download map file,
+and prevent the All maps button from silently abandoning unsaved changes.
+Cloud failures distinguish confirmed browser storage from memory-only edits;
+network/server failures never imply that a browser backup succeeded.
+Opening a map without editing does not create a new save or revision.
+
+Cloud saves, trash and restore operations use one server write transaction.
+The client supplies a monotonically increasing revision; permissions and the
+revision are checked inside that transaction before writing. Two concurrent
+writers cannot both overwrite the same revision. Old clients using direct
+record updates/deletes are rejected and told to refresh. Offline drafts retain
+their original revision even after the server advances, so reopening recovers
+them into a conflict rather than silently discarding them. Pending drafts use
+separate storage keys for editor instances.
+
+Recently deleted keeps the original record, document, owner and group. No
+automatic purge or permanent-delete UI is provided. The map author or group
+owner can restore a group map while still a member; other members can see who
+can restore it. Removed members have no access. Browser drafts use a tombstone
+and can be restored in the same browser. Moving a draft to the cloud does not
+leave a redundant copy in Recently deleted.
+
+Deployment requires the new PocketBase migration and hooks before the updated
+frontend. Existing open clients must refresh after the backend update. A
+frontend-only release is insufficient. Run server/save_smoke.py with the pinned
+PocketBase executable to exercise real simultaneous requests, stale writers,
+recovery and revoked membership. Never run these fixtures against production.
+
+The Pages deployment waits for the public backend capability check before
+publishing these controls. If the backend rollout is delayed or fails, the
+existing website remains online rather than serving an incompatible frontend.

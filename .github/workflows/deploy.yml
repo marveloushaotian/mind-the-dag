@@ -39,5 +39,19 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Wait for compatible library server
+        timeout-minutes: 25
+        shell: bash
+        run: |
+          for attempt in $(seq 1 96); do
+            if curl --fail --silent --max-time 10 https://library-mind-the-dag.2.rahtiapp.fi/api/mtd/capabilities | jq -e '.mapRevisionWrites == 1 and .mapRecovery == 1' >/dev/null; then
+              echo "The library server supports safe saving and recovery."
+              exit 0
+            fi
+            echo "Waiting for the library server rollout ($attempt/96)."
+            sleep 15
+          done
+          echo "The backend is not ready; keeping the current website online."
+          exit 1
       - id: deployment
         uses: actions/deploy-pages@v4

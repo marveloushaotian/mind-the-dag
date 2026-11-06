@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Editor from './Editor';
 import { createCloudMap, explain, freeTitle, getCloudMap, primedCloudMap, updatedMs, type CloudMap } from './cloud';
 import { pendingEdits, useCloudSync } from './cloudSync';
+import { download, slug } from './exporters';
 import type { Doc } from './model';
 import { Wordmark } from './ui';
 
@@ -18,7 +19,7 @@ export default function CloudEditor({ id, onHome, onCreate, onOpen }: { id: stri
       (fresh) =>
         setMap((cur) => {
           if (!cur) return fresh;
-          if (cur.updated === fresh.updated || pendingEdits(id, cur.updated)) return cur;
+          if ((cur.revision === fresh.revision && cur.updated === fresh.updated) || pendingEdits(id, cur.updated)) return cur;
           return fresh;
         }),
       (e) => setError(explain(e)),
@@ -33,7 +34,8 @@ export default function CloudEditor({ id, onHome, onCreate, onOpen }: { id: stri
       </div>
     );
   if (!map) return <EditorSkeleton />;
-  return <Synced key={`${map.id}:${map.updated}`} map={map} onHome={onHome} onCreate={onCreate} onOpen={onOpen} />;
+  if (map.deletedAt && !pendingEdits(id)) return <div className="loading-page"><Wordmark /><p>This map is in Recently deleted. Restore it from its workspace to edit it.</p><button onClick={onHome}>Back to all maps</button></div>;
+  return <Synced key={`${map.id}:${map.revision}:${map.updated}`} map={map} onHome={onHome} onCreate={onCreate} onOpen={onOpen} />;
 }
 
 function Synced({ map, onHome, onCreate, onOpen }: { map: CloudMap; onHome: () => void; onCreate: (d: Doc) => void; onOpen: (id: string) => void }) {
@@ -56,18 +58,24 @@ function Synced({ map, onHome, onCreate, onOpen }: { map: CloudMap; onHome: () =
   const label = {
     saved: 'Saved',
     saving: 'Saving…',
-    offline: 'Offline · kept in this browser',
+    offline: sync.durable ? 'Offline · kept in this browser' : 'Not saved',
+    error: sync.durable ? 'Cloud save failed · kept in this browser' : 'Not saved',
     conflict: 'Not saved',
   }[sync.state];
 
+  const saveCopy = () => download(`${slug(latest.current.title)}.json`, new Blob([JSON.stringify(latest.current, null, 2)], { type: 'application/json' }));
   const banner =
+    (sync.state === 'offline' || sync.state === 'error' || (!sync.durable && sync.state !== 'saved' && sync.state !== 'conflict')) ? (
+      <div className="banner warn" role="alert"><span>{sync.error ?? 'Browser storage is unavailable.'} {sync.durable ? 'Your changes are kept in this browser until they reach the cloud.' : 'Keep this tab open or download your changes.'}</span>
+      <button onClick={() => void sync.flush()}>Retry saving</button><button onClick={saveCopy}>Download map file</button></div>
+    ) :
     sync.state === 'conflict' && sync.theirs ? (
       <div className="banner warn" role="alert">
         <span>
-          {sync.theirs.editedByName ?? 'Someone'} saved a newer version at {timeOf(sync.theirs.updated)}. Your changes since then are not saved yet.
+          {sync.theirs.deletedAt ? 'This map was moved to Recently deleted.' : `${sync.theirs.editedByName ?? 'Someone'} saved a newer version at ${timeOf(sync.theirs.updated)}.`} Your changes are not saved to the cloud. {!sync.durable && 'Browser storage is also unavailable; download your changes before leaving.'}
         </span>
         <span className="spacer" />
-        <button
+        {!sync.theirs.deletedAt && <button
           onClick={() => {
             const theirs = sync.takeTheirs();
             if (theirs) {
@@ -78,7 +86,8 @@ function Synced({ map, onHome, onCreate, onOpen }: { map: CloudMap; onHome: () =
           }}
         >
           Use their version
-        </button>
+        </button>}
+        <button onClick={saveCopy}>Download map file</button>
         <button
           className="primary"
           disabled={copying}
@@ -136,12 +145,13 @@ function Synced({ map, onHome, onCreate, onOpen }: { map: CloudMap; onHome: () =
       place={{ kind: 'cloud', mapId: map.id, groupId: map.groupId, groupName: map.groupName }}
       checkTitle={(t) => freeTitle(map.id, map.groupId, t)}
       saveState={
-        <span key={sync.state} className={`save-state${sync.state === 'conflict' || sync.state === 'offline' ? ' warn' : ''}`} title={map.groupId ? 'Saved to the group' : 'Saved to My maps'}>
+        <span key={sync.state} className={`save-state${sync.state === 'conflict' || sync.state === 'offline' || sync.state === 'error' ? ' warn' : ''}`} title={map.groupId ? 'Saved to the group' : 'Saved to My maps'}>
           {label}
         </span>
       }
       banner={banner}
       onHome={() => {
+        if (!sync.durable && sync.state !== 'saved' && !window.confirm('Your changes are not saved. Leave this map?')) return;
         void sync.flush();
         onHome();
       }}

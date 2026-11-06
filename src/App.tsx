@@ -66,7 +66,7 @@ export default function App() {
         } catch (e) {
           setError(explain(e));
         }
-      } else openLocal(createMap(d));
+      } else { try { openLocal(createMap(d)); } catch (e) { setError(explain(e)); } }
     },
     [member],
   );

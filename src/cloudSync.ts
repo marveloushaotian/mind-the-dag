@@ -4,35 +4,27 @@
  * is overwritten; the editor is told so it can offer their version or a copy of yours.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { saveCloudMap, type CloudMap } from './cloud';
+import { explain, saveCloudMap, type CloudMap } from './cloud';
 import type { Doc } from './model';
 
-export type SyncState = 'saved' | 'saving' | 'offline' | 'conflict';
+export type SyncState = 'saved' | 'saving' | 'offline' | 'conflict' | 'error';
 
 const KEY = (id: string) => `mind-the-dag:cloud-pending:${id}`;
-interface Pending {
-  doc: Doc;
-  base: string;
-}
-
-/** Unsynced edits of a cloud map left in this browser (after closing the tab offline, say). */
-export function pendingEdits(id: string, base: string): Doc | null {
+interface Pending { doc: Doc; base: number | string; at?: number }
+const memory = new Map<string, Pending>();
+function recovered(id: string): { key: string; value: Pending; raw: string } | null {
   try {
-    const raw = localStorage.getItem(KEY(id));
-    const p = raw ? (JSON.parse(raw) as Pending) : null;
-    return p && p.base === base ? p.doc : null;
-  } catch {
-    return null;
-  }
+    const prefix = KEY(id);
+    const entries = Object.keys(localStorage).filter(k => k === prefix || k.startsWith(prefix + ':'))
+      .flatMap(key => { try { const raw = localStorage.getItem(key)!; const value = JSON.parse(raw) as Pending; return value?.doc?.version === 1 ? [{ key, raw, value }] : []; } catch { return []; } })
+      .sort((a, b) => (b.value.at ?? 0) - (a.value.at ?? 0));
+    return entries[0] ?? null;
+  } catch { return null; }
 }
-const writePending = (id: string, p: Pending | null) => {
-  try {
-    if (p) localStorage.setItem(KEY(id), JSON.stringify(p));
-    else localStorage.removeItem(KEY(id));
-  } catch {
-    /* storage full or blocked: the server copy is the fallback */
-  }
-};
+/** Recover edits even when the remote version advanced; the server resolves the conflict. */
+export function pendingEdits(id: string, _base?: string): Doc | null {
+  return memory.get(id)?.doc ?? recovered(id)?.value.doc ?? null;
+}
 
 // Saves still running after an editor closed; the start page waits for them before listing maps.
 const inflight = new Set<Promise<unknown>>();
@@ -52,12 +44,27 @@ export async function whenSynced(maxMs = 6000): Promise<void> {
 }
 
 export function useCloudSync(map: CloudMap) {
+  const initial = useRef(memory.get(map.id) ?? recovered(map.id)?.value);
+  const recovery = useRef(recovered(map.id));
+  const storageKey = useRef(KEY(map.id) + ':' + crypto.randomUUID());
+  const [durable, setDurable] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const writePending = (_id: string, value: Pending | null) => {
+    try {
+      if (value) { memory.set(map.id, value); localStorage.setItem(storageKey.current, JSON.stringify({ ...value, at: Date.now() })); }
+      else { memory.delete(map.id); localStorage.removeItem(storageKey.current); }
+      if (recovery.current && localStorage.getItem(recovery.current.key) === recovery.current.raw) localStorage.removeItem(recovery.current.key);
+      recovery.current = null;
+      setDurable(true); return true;
+    } catch { setDurable(false); return false; }
+  };
   const [state, setState] = useState<SyncState>(() => (pendingEdits(map.id, map.updated) ? 'saving' : 'saved'));
   const [theirs, setTheirs] = useState<CloudMap | null>(null);
-  const base = useRef(map.updated);
+  const base = useRef(typeof initial.current?.base === 'number' ? initial.current.base : initial.current ? -1 : map.revision);
   const pending = useRef<Doc | null>(pendingEdits(map.id, map.updated));
   const timer = useRef<number | undefined>(undefined);
   const busy = useRef(false);
+  const mounted = useRef(true);
   const blocked = useRef(false);
 
   const flush = useCallback(async () => {
@@ -73,7 +80,8 @@ export function useCloudSync(map: CloudMap) {
         setState('conflict');
         return;
       }
-      base.current = r.updated;
+      base.current = r.revision;
+      setError(null);
       if (pending.current === doc) {
         pending.current = null;
         writePending(map.id, null);
@@ -83,9 +91,10 @@ export function useCloudSync(map: CloudMap) {
         writePending(map.id, { doc: pending.current!, base: base.current });
         timer.current = window.setTimeout(flush, 400);
       }
-    } catch {
-      setState('offline');
-      timer.current = window.setTimeout(flush, 5000);
+    } catch (e) {
+      setError(explain(e));
+      setState(navigator.onLine === false ? 'offline' : 'error');
+      if (mounted.current) timer.current = window.setTimeout(flush, 5000);
     } finally {
       busy.current = false;
     }
@@ -96,7 +105,7 @@ export function useCloudSync(map: CloudMap) {
       pending.current = doc;
       writePending(map.id, { doc, base: base.current });
       if (blocked.current) return;
-      setState((s) => (s === 'offline' ? s : 'saving'));
+      setState('saving');
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(flush, 1200);
     },
@@ -105,13 +114,16 @@ export function useCloudSync(map: CloudMap) {
 
   // Edits left over from an earlier session are sent first.
   useEffect(() => {
+    mounted.current = true;
     const editor = Symbol();
     openEditors.add(editor);
-    if (pending.current) timer.current = window.setTimeout(flush, 300);
+    if (pending.current) { writePending(map.id, { doc: pending.current, base: base.current }); timer.current = window.setTimeout(flush, 300); }
     const now = () => void flush();
     window.addEventListener('online', now);
     window.addEventListener('pagehide', now);
     return () => {
+      mounted.current = false;
+      window.clearTimeout(timer.current);
       openEditors.delete(editor);
       window.removeEventListener('online', now);
       window.removeEventListener('pagehide', now);
@@ -140,7 +152,7 @@ export function useCloudSync(map: CloudMap) {
   /** Take their version: your unsaved edits are dropped. Returns their document. */
   const takeTheirs = useCallback((): Doc | null => {
     if (!theirs) return null;
-    base.current = theirs.updated;
+    base.current = theirs.revision;
     pending.current = null;
     writePending(map.id, null);
     blocked.current = false;
@@ -155,5 +167,10 @@ export function useCloudSync(map: CloudMap) {
     writePending(map.id, null);
   }, [map.id]);
 
-  return { state, theirs, queue, flush, takeTheirs, dropMine };
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => { if (pending.current) { e.preventDefault(); e.returnValue = ''; } };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, []);
+  return { state, durable, error, theirs, queue, flush, takeTheirs, dropMine };
 }

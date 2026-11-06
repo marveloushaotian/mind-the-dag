@@ -32,6 +32,8 @@ jobs:
           docker cp pb:/pb/pocketbase "$RUNNER_TEMP/pocketbase"
           chmod +x "$RUNNER_TEMP/pocketbase"
           python3 server/oauth_smoke.py --pocketbase "$RUNNER_TEMP/pocketbase" --verbose
+      - name: Concurrent saving and recovery
+        run: python3 server/save_smoke.py --pocketbase "$RUNNER_TEMP/pocketbase"
       - name: Push
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin

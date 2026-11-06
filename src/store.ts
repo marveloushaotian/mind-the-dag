@@ -16,15 +16,17 @@ export function useDocument(initial: () => Doc, onSave?: (d: Doc) => void) {
   const docRef = useRef(doc);
   docRef.current = doc;
 
+  const lastSaved = useRef(doc);
   const saveRef = useRef(onSave);
   saveRef.current = onSave;
   useEffect(() => {
-    const t = setTimeout(() => saveRef.current?.(doc), 300);
+    if (doc === lastSaved.current) return;
+    const t = setTimeout(() => { saveRef.current?.(doc); lastSaved.current = doc; }, 300);
     return () => clearTimeout(t);
   }, [doc]);
   // Flush the latest state when the editor closes or the page goes away.
   useEffect(() => {
-    const flush = () => saveRef.current?.(docRef.current);
+    const flush = () => { if (docRef.current !== lastSaved.current) { saveRef.current?.(docRef.current); lastSaved.current = docRef.current; } };
     window.addEventListener('pagehide', flush);
     return () => {
       window.removeEventListener('pagehide', flush);

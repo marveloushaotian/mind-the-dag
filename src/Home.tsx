@@ -1,3 +1,4 @@
+import { RecentlyDeleted } from './RecentlyDeleted';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { metagenomeExample } from './examples';
 import { IDuplicate, IFile, IGroup, IPlus, ITrash, IUpload } from './icons';
@@ -94,12 +95,15 @@ function Card({
   /** `confirm` is the button in the confirmation; `warning` a line under the question. */
   danger?: { label: string; confirm: string; warning?: string; run: () => void | Promise<void> };
 }) {
+  const [actionError, setActionError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const act = async (fn: () => void | Promise<void>) => {
-    setBusy(true);
+    setBusy(true); setActionError(null);
     try {
       await fn();
+    } catch (e) {
+      setActionError(explain(e));
     } finally {
       setBusy(false);
     }
@@ -117,6 +121,7 @@ function Card({
         <span className="card-title">{title || 'Untitled'}</span>
         <span className="card-meta">{meta}</span>
       </button>
+      {actionError && <p className="note warn" role="alert">{actionError}</p>}
       {!confirm && (
         <div className="card-actions">
           {actions.map((a) => {
@@ -325,6 +330,7 @@ function LocalHome({ onOpen, onCreate, onBack }: { onOpen: (id: string) => void;
           Try an editable example
         </button>
       </div>
+      <RecentlyDeleted onChange={() => setMaps(listMaps())} />
       {!maps.length && <div className="home-empty-intro"><h1>No maps yet</h1><p>Choose New map to start from a blank canvas, or try an example you can change. Your work saves automatically in this browser.</p></div>}
       {notice && <p className="home-notice">{notice}</p>}
       {maps.length > 0 && <LocalDrafts maps={maps} onOpen={onOpen} onChange={() => setMaps(listMaps())} />}
@@ -387,7 +393,7 @@ function LocalDrafts({
             danger={{
               label: 'Delete',
               confirm: 'Delete',
-              warning: 'It is only in this browser, so it is gone for good.',
+              warning: 'You can restore it from Recently deleted in this browser.',
               run: () => {
                 deleteMap(m.id);
                 onChange();
@@ -628,9 +634,11 @@ function Workspace({
             </button>
           </div>
         )}
+        {(section === 'mine' || groupId) && <RecentlyDeleted key={section} cloud groupId={groupId} userId={member.id} groupOwner={group?.role === 'owner'} onChange={() => void loadMaps()} />}
         {createError && <p className="home-error">{createError}</p>}
         {error && <div className="callout" role="alert"><p className="home-error">{error}</p><button className="small" onClick={() => { setError(null); void loadSide(); void loadMaps(); }}>Refresh workspace</button></div>}
         {notice && <p className="home-notice" role="status">{notice}</p>}
+        {section === 'mine' && <RecentlyDeleted label="Deleted browser drafts" onChange={() => { setLocal(listMaps()); void loadMaps(); }} />}
         {section === 'mine' && local.length > 0 && (
           <div className="callout">
             <span>
@@ -739,10 +747,10 @@ function Workspace({
                         ? {
                             label: 'Delete',
                             confirm: 'Delete',
-                            warning: groupId ? 'Everyone in the group loses it.' : undefined,
+                            warning: groupId ? 'This moves the map to Recently deleted for everyone in the group. Its author or the group owner can restore it.' : 'You can restore it from Recently deleted.',
                             run: async () => {
                               try {
-                                await deleteCloudMap(m.id);
+                                await deleteCloudMap(m.id, m.revision);
                               } catch (e) {
                                 setError(explain(e));
                               }

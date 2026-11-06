@@ -274,7 +274,7 @@ input[type='checkbox'] { accent-color: var(--ink); width: 15px; height: 15px; ma
 /* The wordmark sits at the same place and size on every page, and stays still during page changes. */
 .topbar .wordmark { view-transition-name: brand; }
 .home-main { max-width: 1080px; margin: 0 auto; padding: 40px 24px 64px; }
-.home-actions { display: flex; align-items: center; gap: 10px; }
+.home-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 button.big { height: 44px; padding: 0 18px; font-size: var(--text-body); border-radius: 10px; gap: 8px; }
 button.link { border: 0; background: transparent; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
 button.link:hover:not(:disabled) { background: transparent; color: var(--ink); }
@@ -411,7 +411,7 @@ button.danger.flush:hover:not(:disabled) { background: transparent; text-decorat
 .invite { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
 .member-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .member-list li { display: flex; align-items: center; gap: 10px; min-height: 30px; font-size: var(--text-body); }
-.banner { display: flex; align-items: center; gap: 10px; padding: 8px 14px; font-size: var(--text-body); border-bottom: 1px solid var(--line); flex: none; }
+.banner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 14px; font-size: var(--text-body); border-bottom: 1px solid var(--line); flex: none; }
 .banner.warn { background: #fff4e5; }
 .banner.info { background: #eef6f1; }
 .banner-error { color: var(--danger); font-size: var(--text-note); line-height: var(--leading-note); }
@@ -586,3 +586,6 @@ button.subtle:hover:not(:disabled) { color: var(--ink); }
   .app > .topbar > .group:last-of-type { margin-left: auto; }
   .app > .topbar > .account-menu { margin-left: auto; }
 }
+
+.recovery-entry { margin-top: 12px; }
+.recovery-list .callout { flex-wrap: wrap; overflow-wrap: anywhere; }

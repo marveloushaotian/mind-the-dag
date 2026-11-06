@@ -163,3 +163,22 @@ describe('compact controls and canvas continuity', () => {
     await pointer(canvas(), 'pointerup', 140, 450, 'mouse');
   });
 });
+
+describe('honest save feedback', () => {
+  it('retains edits and offers retry and download when saving fails', async () => {
+    vi.useFakeTimers();
+    saved.mockImplementation(() => { throw new Error('Browser storage is full.'); });
+    await mount();
+    await fill(host.querySelector<HTMLInputElement>('input[aria-label="Map title"]')!, 'Keep this work');
+    await act(async () => { await vi.advanceTimersByTimeAsync(350); });
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('Browser storage is full');
+    expect(host.querySelector('.save-state')?.textContent).toBe('Not saved');
+    expect(button('Download map file')).toBeTruthy();
+    saved.mockImplementation(noop);
+    await click('Retry saving');
+    expect(saved.mock.lastCall?.[0].title).toBe('Keep this work');
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.querySelector('.save-state')?.textContent).toBe('Saved in this browser');
+    vi.useRealTimers();
+  });
+});

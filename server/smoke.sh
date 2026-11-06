@@ -70,14 +70,16 @@ ok "user names visible only within shared groups"
 MB=$(newmap "$TB" "$B_ID" "$G"); [ "$MB" != null ] || fail "member creates group map"
 [ "$(count maps "$TA" "&filter=group%3D%27$G%27")" = 1 ] || fail "group map visible to members"
 [ "$(code "$B/api/collections/maps/records/$MB" -H "Authorization: $TC")" = 404 ] || fail "group map hidden from non-members"
-[ "$(code -X PATCH "$B/api/collections/maps/records/$MB" -H "Authorization: $TA" -d "{\"title\":\"T2\",\"editedBy\":\"$A_ID\"}")" = 200 ] || fail "member edits group map"
+payload=$(jq -cn --argjson doc "$DOC" '{revision:0,doc:$doc}')
+s=$(code -X POST "$B/api/mtd/maps/$MB/save" -H "Authorization: $TA" -d "$payload")
+[ "$s" = 200 ] || fail "member edits group map (got $s)"
 [ "$(code -X PATCH "$B/api/collections/maps/records/$MB" -H "Authorization: $TA" -d "{\"editedBy\":\"$B_ID\"}")" != 200 ] || fail "edit in someone else's name"
 [ "$(code -X PATCH "$B/api/collections/maps/records/$MB" -H "Authorization: $TB" -d '{"group":""}')" != 200 ] || fail "move group map out"
 [ "$(code -X PATCH "$B/api/collections/maps/records/$MB" -H "Authorization: $TB" -d "{\"owner\":\"$A_ID\"}")" != 200 ] || fail "owner transfer"
 MA2=$(newmap "$TA" "$A_ID" "$G")
 [ "$(code -X DELETE "$B/api/collections/maps/records/$MA2" -H "Authorization: $TB")" != 204 ] || fail "member deletes another member's group map"
 MB2=$(newmap "$TB" "$B_ID" "$G")
-[ "$(code -X DELETE "$B/api/collections/maps/records/$MB2" -H "Authorization: $TA")" = 204 ] || fail "group owner deletes a group map"
+[ "$(code -X POST "$B/api/mtd/maps/$MB2/trash" -H "Authorization: $TA" -d '{"revision":0}')" = 200 ] || fail "group owner moves a group map to trash"
 ok "group maps"
 
 # --- leaving and removing
@@ -103,7 +105,10 @@ ok "group delete keeps maps"
 # --- sign-up only through an invitation link from the admin
 s=$(code -X POST "$B/api/collections/users/records" -d '{"email":"x@example.test","password":"ci-user-pass-123","passwordConfirm":"ci-user-pass-123"}')
 [ "$s" != 200 ] || fail "sign-up without a link"
-s=$(code -X POST "$B/api/collections/invitations/records" -H "Authorization: $TA" -d "{\"group\":\"$(j -X POST "$B/api/collections/groups/records" -H "Authorization: $TA" -d "{\"name\":\"Lab2\",\"owner\":\"$A_ID\"}" | jq -r .id)\",\"email\":\"nobody@example.test\",\"invitedBy\":\"$A_ID\"}")
+group_payload=$(jq -cn --arg owner "$A_ID" '{name:"Lab2",owner:$owner}')
+G_UNREGISTERED=$(j -X POST "$B/api/collections/groups/records" -H "Authorization: $TA" -d "$group_payload" | jq -r .id)
+invite_payload=$(jq -cn --arg group "$G_UNREGISTERED" --arg by "$A_ID" '{group:$group,email:"nobody@example.test",invitedBy:$by}')
+s=$(code -X POST "$B/api/collections/invitations/records" -H "Authorization: $TA" -d "$invite_payload")
 [ "$s" = 400 ] || fail "group invitation for an email without an account (got $s)"
 [ "$(code -X POST "$B/api/collections/signups/records" -H "Authorization: $TA" -d "{\"createdBy\":\"$A_ID\"}")" != 200 ] || fail "non-admin creates a link"
 j -X PATCH "$B/api/collections/users/records/$A_ID" -H "Authorization: $SU" -d '{"admin":true}' >/dev/null
@@ -158,7 +163,7 @@ st=$(j "$B/api/settings" -H "Authorization: $SU")
 h=$(curl -s -o /dev/null -D - -H 'Origin: https://marveloushaotian.github.io' "$B/api/health" | grep -i '^access-control-allow-origin' || true)
 [ -n "$h" ] || fail "CORS header for the Pages origin"
 ok "backups, rate limits, proxy header, CORS"
-# --- one-off title renumbering (migration 1793500000), run again over repeated titles
+# --- rerun title renumbering and the subsequent recovery schema over existing maps
 G9=$(j -X POST "$B/api/collections/groups/records" -H "Authorization: $TA" -d "{\"name\":\"Titles\",\"owner\":\"$A_ID\"}" | jq -r .id)
 titled() { # title [group]
   sleep 0.05
@@ -166,7 +171,7 @@ titled() { # title [group]
     -d "{\"title\":\"$1\",\"doc\":{\"version\":1,\"title\":\"$1\"},\"owner\":\"$A_ID\",\"editedBy\":\"$A_ID\",\"group\":\"${2:-}\"}" | jq -r .id
 }
 D1=$(titled Dup); D2=$(titled Dup); D3=$(titled "Dup 2"); GD=$(titled Dup "$G9")
-out=$(echo y | docker exec -i "$C" /pb/pocketbase migrate down 1 --dir=/pb_data --migrationsDir=/pb/pb_migrations 2>&1) || fail "migrate down: $out"
+out=$(echo y | docker exec -i "$C" /pb/pocketbase migrate down 2 --dir=/pb_data --migrationsDir=/pb/pb_migrations 2>&1) || fail "migrate down: $out"
 echo "::notice title=migrate down::$(echo "$out" | tr '\n' ' ' | cut -c1-400)"
 out=$(docker exec "$C" /pb/pocketbase migrate up --dir=/pb_data --migrationsDir=/pb/pb_migrations 2>&1) || fail "migrate up: $out"
 echo "::notice title=migrate up::$(echo "$out" | tr '\n' ' ' | cut -c1-400)"

@@ -208,6 +208,8 @@ export interface CloudMap {
   groupName: string | null;
   updated: string;
   editedByName: string | null;
+  revision: number;
+  deletedAt: string;
 }
 const nameOf = (r: unknown) => ((r as RecordModel | undefined)?.name as string)?.trim() || null;
 const toMap = (r: RecordModel): CloudMap => ({
@@ -219,6 +221,8 @@ const toMap = (r: RecordModel): CloudMap => ({
   groupId: (r.group as string) || null,
   groupName: nameOf(r.expand?.group),
   updated: r.updated as string,
+  revision: Number(r.revision ?? 0),
+  deletedAt: String(r.deletedAt ?? ""),
   editedByName: nameOf(r.expand?.editedBy),
 });
 export const updatedMs = (s: string) => Date.parse(s.replace(' ', 'T')) || 0;
@@ -229,17 +233,17 @@ const me = () => {
   return m;
 };
 
-export async function listMyMaps(): Promise<CloudMap[]> {
+export async function listMyMaps(deleted = false): Promise<CloudMap[]> {
   const items = await client()
     .collection('maps')
-    .getFullList({ filter: client().filter('group = "" && owner = {:me}', { me: me().id }), sort: '-updated', expand: 'owner' });
+    .getFullList({ filter: client().filter('group = "" && owner = {:me}', { me: me().id }) + (deleted ? ' && deletedAt != ""' : ' && deletedAt = ""'), sort: '-updated', expand: 'owner' });
   return items.map(toMap);
 }
 
-export async function listGroupMaps(groupId: string): Promise<CloudMap[]> {
+export async function listGroupMaps(groupId: string, deleted = false): Promise<CloudMap[]> {
   const items = await client()
     .collection('maps')
-    .getFullList({ filter: client().filter('group = {:g}', { g: groupId }), sort: '-updated', expand: 'owner,editedBy,group' });
+    .getFullList({ filter: client().filter('group = {:g}', { g: groupId }) + (deleted ? ' && deletedAt != ""' : ' && deletedAt = ""'), sort: '-updated', expand: 'owner,editedBy,group' });
   return items.map(toMap);
 }
 
@@ -276,24 +280,23 @@ export async function freeTitle(mapId: string, groupId: string | null, title: st
   return uniqueTitle(title, there.map((r) => String(r.title ?? '')));
 }
 
-export type SaveResult = { ok: true; updated: string } | { ok: false; theirs: CloudMap };
+export type SaveResult = { ok: true; updated: string; revision: number } | { ok: false; theirs: CloudMap };
 
-/**
- * Save unless someone else saved since `base` (the version this editor last loaded or saved).
- * On a conflict nothing is written and their version is returned.
- */
-export async function saveCloudMap(id: string, doc: Doc, base: string): Promise<SaveResult> {
-  const now = await client().collection('maps').getOne(id, { fields: 'id,updated' });
-  if (now.updated !== base) return { ok: false, theirs: await getCloudMap(id) };
-  const r = await client()
-    .collection('maps')
-    .update(id, { title: doc.title || 'Untitled', doc, editedBy: me().id }, { fields: 'id,updated' });
-  return { ok: true, updated: r.updated as string };
+export async function saveCloudMap(id: string, doc: Doc, revision: number): Promise<SaveResult> {
+  const r = await client().send<{ ok: boolean; updated: string; revision: number }>(`/api/mtd/maps/${id}/save`, {
+    method: 'POST', body: { doc, revision }, requestKey: null,
+  });
+  return r.ok ? { ok: true, updated: r.updated, revision: r.revision } : { ok: false, theirs: await getCloudMap(id) };
 }
 
-export async function deleteCloudMap(id: string): Promise<void> {
-  await client().collection('maps').delete(id);
+async function changeDeleted(id: string, revision: number, action: 'trash' | 'restore'): Promise<void> {
+  const result = await client().send<{ ok: boolean }>(`/api/mtd/maps/${id}/${action}`, {
+    method: 'POST', body: { revision }, requestKey: null,
+  });
+  if (!result.ok) throw new Error('This map changed. Refresh the list and try again.');
 }
+export const deleteCloudMap = (id: string, revision: number) => changeDeleted(id, revision, 'trash');
+export const restoreCloudMap = (id: string, revision: number) => changeDeleted(id, revision, 'restore');
 
 // ---------------------------------------------------------------- groups
 export interface Group {

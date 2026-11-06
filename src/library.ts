@@ -61,20 +61,21 @@ function migrate(): void {
 export function listMaps(): MapEntry[] {
   migrate();
   const idx = read<MapEntry[]>(INDEX) ?? [];
-  return [...idx].sort((a, b) => b.updated - a.updated);
+  return [...idx].filter((e) => goneTo(e.id) === undefined).sort((a, b) => b.updated - a.updated);
 }
 
 export function loadMap(id: string): Doc | null {
+  if (goneTo(id) !== undefined) return null;
   const d = read<Doc>(MAP(id));
   return d && d.version === 1 ? d : null;
 }
 
 export function saveMap(id: string, doc: Doc): void {
-  if (goneTo(id) !== undefined) return;
-  write(MAP(id), doc);
+  if (goneTo(id) !== undefined) throw new Error('This map was moved or deleted in another tab. Download your changes to keep them.');
+  if (!write(MAP(id), doc)) throw new Error("Could not save in this browser. Download a map file to keep your changes.");
   const idx = (read<MapEntry[]>(INDEX) ?? []).filter((e) => e.id !== id);
   idx.push({ id, title: doc.title, updated: Date.now() });
-  write(INDEX, idx);
+  if (!write(INDEX, idx)) throw new Error("Could not update the map list. Download a map file to keep your changes.");
 }
 
 export function createMap(doc: Doc): string {
@@ -93,17 +94,23 @@ export const goneKey = GONE;
 
 /** Remove a draft for good, remembering where it went. */
 export function retireMap(id: string, to: string | null): void {
-  write(GONE(id), { to, at: Date.now() });
-  deleteMap(id);
+  if (!write(GONE(id), { to, at: Date.now() })) throw new Error('Could not update browser storage.');
+  remove(MAP(id));
+  write(INDEX, (read<MapEntry[]>(INDEX) ?? []).filter((e) => e.id !== id));
 }
 
+/** Retain the document and index; the tombstone hides it from active maps. */
 export function deleteMap(id: string): void {
-  if (goneTo(id) === undefined) write(GONE(id), { to: null, at: Date.now() });
-  remove(MAP(id));
-  write(
-    INDEX,
-    (read<MapEntry[]>(INDEX) ?? []).filter((e) => e.id !== id),
-  );
+  if (!write(GONE(id), { to: null, at: Date.now() })) throw new Error('Could not move this map to Recently deleted.');
+}
+
+export function listDeletedMaps(): MapEntry[] {
+  return (read<MapEntry[]>(INDEX) ?? []).filter((e) => goneTo(e.id) === null && !!read<Doc>(MAP(e.id)));
+}
+export function restoreMap(id: string): void {
+  if (!read<Doc>(MAP(id))) throw new Error('This map is no longer available.');
+  localStorage.removeItem(GONE(id));
+  if (goneTo(id) !== undefined) throw new Error('Could not restore this map.');
 }
 
 export function duplicateMap(id: string): string | null {

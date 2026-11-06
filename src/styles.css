@@ -638,3 +638,20 @@ button.subtle:hover:not(:disabled) { color: var(--ink); }
   .compact-lines > svg { display: none; }
   .compact-kind select { width: 70px; }
 }
+
+.compact-selection-controls { display: flex; align-items: center; gap: 6px; margin-top: 6px; min-width: 0; }
+.compact-selection-controls > span { flex: 1; font-size: var(--text-note); color: var(--muted); }
+.compact-selection-controls button { min-height: 44px; padding-inline: 8px; }
+.compact-selection-controls button.on { color: #fff; background: var(--ink); }
+.compact-selection-controls .menu-list { z-index: 30; }
+@media (max-width: 380px) {
+  .compact-selection-controls { gap: 4px; }
+  .compact-selection-controls button { padding-inline: 6px; font-size: 13px; }
+  .compact-selection-controls > span { font-size: 12px; }
+}
+@media (max-width: 900px) and (max-height: 500px) and (orientation: landscape) {
+  .compact-tools { flex-wrap: wrap; }
+  .compact-selection-controls { order: 3; flex-basis: 100%; margin: 0; }
+  .app > .topbar .wordmark { font-size: 15px !important; }
+  .app > .topbar .group button { padding-inline: 6px; font-size: 13px; }
+}

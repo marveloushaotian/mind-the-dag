@@ -30,6 +30,12 @@ existing map. In the editor, tools are on the left and the selected item's
 settings on the right; with nothing selected, the right panel holds the map's
 palette, theme, legend and title block.
 
+On a phone, tap an item to select it; **Delete** appears above the canvas.
+Choose **Box select**, then drag around several items, even over a section.
+Drag a selected station or section to move the group. **More** offers duplicate,
+select all and clear selection. **Undo** restores a deletion or reverses a move.
+Use two fingers to pan or zoom; starting that gesture cancels an unfinished edit.
+
 | Key | Action |
 |---|---|
 | V · S · C · R | Select · Station · Connect · Section |

@@ -2,9 +2,12 @@ import type { ReactNode } from 'react';
 import type { Doc, Line, Station, StationKind } from './model';
 import { Swatch, TOOLS, type Tool } from './panels';
 import type { ThemeId } from './tokens';
+import { Menu } from './ui';
 
 /** Compact controls own the same actions as the desktop rails, without hiding them behind a keyboard. */
-export function CompactTools({ doc, tool, active, theme, stationKind, setTool, setStationKind, onLines, onProperties, propertiesOpen, saveState }: {
+export function CompactTools({ doc, tool, active, theme, stationKind, setTool, setStationKind, onLines, onProperties, propertiesOpen, saveState, selectionCount, boxSelect, onBoxSelect, onSelectAll, onClear, onDelete, onDuplicate, canDelete, canDuplicate }: {
+  selectionCount: number; boxSelect: boolean; onBoxSelect: () => void; onSelectAll: () => void;
+  onClear: () => void; onDelete: () => void; onDuplicate: () => void; canDelete: boolean; canDuplicate: boolean;
   doc: Doc; tool: Tool; active: Line | null; theme: ThemeId; stationKind: StationKind;
   setTool: (tool: Tool) => void; setStationKind: (kind: StationKind) => void;
   onLines: () => void; onProperties: () => void; propertiesOpen: boolean; saveState: ReactNode;
@@ -22,6 +25,16 @@ export function CompactTools({ doc, tool, active, theme, stationKind, setTool, s
       </button>
       <button onClick={onProperties} aria-label="Open properties">Properties</button>
     </div>
+    {tool === 'select' && <div className="compact-selection-controls" aria-label="Selection actions">
+      <button aria-pressed={boxSelect} className={boxSelect ? 'on' : ''} onClick={onBoxSelect}>Box select</button>
+      <span role="status">{selectionCount ? `${selectionCount} selected` : 'Select items'}</span>
+      {canDelete && <button className="danger" aria-label="Delete selection" onClick={onDelete}>Delete</button>}
+      <Menu label="More" ariaLabel="More selection actions" items={[
+        ...(canDuplicate ? [{ label: 'Duplicate selection', onSelect: onDuplicate }] : []),
+        { label: 'Select all', onSelect: onSelectAll },
+        ...(selectionCount ? [{ label: 'Clear selection', onSelect: onClear }] : []),
+      ]} />
+    </div>}
     <div className="compact-tool-footer">
       {tool === 'station' && !propertiesOpen && <label className="compact-kind"><span>New station</span>
         <select aria-label="New station type" value={stationKind} onChange={(e) => setStationKind(e.target.value as StationKind)}>
@@ -35,14 +48,14 @@ export function CompactTools({ doc, tool, active, theme, stationKind, setTool, s
 }
 
 /** Contextual next actions are derived from the drawing; no tour state is saved in the map. */
-export function DrawingGuidance({ doc, tool, selected, source, target, active, compact, onTool, onExample }: {
+export function DrawingGuidance({ doc, tool, selected, source, target, active, compact, boxSelect = false, onTool, onExample }: {
   doc: Doc; tool: Tool; selected: ReadonlySet<string>; source: Station | null;
-  target: 'none' | 'connect' | 'already'; active: Line | null; compact: boolean;
+  target: 'none' | 'connect' | 'already'; active: Line | null; compact: boolean; boxSelect?: boolean;
   onTool: (tool: Tool) => void; onExample: () => void;
 }) {
   const count = doc.stations.length;
   const choose = compact ? 'Tap' : 'Click';
-  if (!count && !doc.sections.length && tool === 'select') return <section className="editor-start" aria-label="Start drawing">
+  if (!boxSelect && !count && !doc.sections.length && tool === 'select') return <section className="editor-start" aria-label="Start drawing">
     <strong>Draw your first workflow</strong>
     <p>Add stations for your steps, then connect them with a line.</p>
     <div className="editor-start-actions"><button className="primary" onClick={() => onTool('station')}>Add stations</button><button onClick={onExample}>Use an example</button></div>
@@ -51,7 +64,9 @@ export function DrawingGuidance({ doc, tool, selected, source, target, active, c
 
   let message: string;
   let next: { label: string; tool: Tool } | null = null;
-  if (tool === 'station') {
+  if (boxSelect) {
+    message = 'Drag a box around items. Use two fingers to move the canvas.';
+  } else if (tool === 'station') {
     message = !count ? `${choose} the canvas to add your first station.`
       : count === 1 ? 'Add another station, then connect your steps.'
       : !doc.edges.length ? 'Your stations are ready. Connect them to show the workflow.' : `${choose} the canvas to add a station.`;
@@ -71,7 +86,11 @@ export function DrawingGuidance({ doc, tool, selected, source, target, active, c
     message = 'Drag around steps to add a section. Select the section to name it or change its fill.';
     next = { label: 'Done', tool: 'select' };
   } else if (selected.size) {
-    message = compact ? 'Open Properties to name or change your selection.' : 'Edit the name and appearance in the properties panel.';
+    message = !compact ? 'Edit the name and appearance in the properties panel.'
+      : selected.size > 1 ? 'Drag a selected station or section to move the selection. Delete removes selected items.'
+      : [...selected].some(key => key.startsWith('edge:')) ? 'Open Properties to edit the connection, or Delete to remove it.'
+      : [...selected].some(key => /^(station|section):/.test(key)) ? 'Drag to move. Open Properties to edit, or Delete to remove.'
+      : 'Drag to move. Open Properties to edit your selection.';
   } else if (count === 1) {
     message = 'Add another station to continue your workflow.'; next = { label: 'Add stations', tool: 'station' };
   } else if (count >= 2 && !doc.edges.length) {

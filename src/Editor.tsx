@@ -29,6 +29,7 @@ const NO_DRAGGED_STATIONS: readonly string[] = [];
 
 type DragState =
   | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
+  | { kind: 'selection'; start: Pt; stations: Map<string, Pt>; sections: Map<string, Pt>; moved: boolean }
   | { kind: 'stations'; ids: string[]; start: { x: number; y: number }; orig: Map<string, { x: number; y: number }>; moved: boolean }
   | { kind: 'section'; id: string; start: { x: number; y: number }; orig: { x: number; y: number }; members: Map<string, { x: number; y: number }>; moved: boolean }
   | { kind: 'resize'; id: string; start: { x: number; y: number }; orig: { w: number; h: number }; moved: boolean }
@@ -83,6 +84,7 @@ export default function Editor({
   }, [saveError, doc, savedDoc, saveState]);
   const [tool, setToolState] = useState<Tool>('select');
   const [stationKind, setStationKind] = useState<StationKind>('step');
+  const [boxSelect, setBoxSelect] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState<string | null>(null);
   const [activeLine, setActiveLine] = useState<string | null>(null);
@@ -170,12 +172,13 @@ export default function Editor({
     clearDrag();
     cancelConnection();
   };
-  const undoEdit = () => { stationMotion.cancel(); clearDrag(); cancelConnection(); undo(); };
-  const redoEdit = () => { stationMotion.cancel(); cancelGesture(); redo(); };
+  const undoEdit = () => { stationMotion.cancel(); clearDrag(); cancelConnection(); setSelected(new Set()); setBoxSelect(false); undo(); };
+  const redoEdit = () => { stationMotion.cancel(); cancelGesture(); setSelected(new Set()); setBoxSelect(false); redo(); };
 
   const active = activeLine && doc.lines.some((l) => l.id === activeLine) ? activeLine : doc.lines[0]?.id ?? null;
   const setTool = (t: Tool) => {
     setCompactPanel(null);
+    setBoxSelect(false);
     setToolState(t);
     if (t === 'station') setStationKind('step');
     cancelConnection();
@@ -462,6 +465,7 @@ export default function Editor({
         if (drag) cancelGesture();
         cancelConnection();
         setSelected(new Set());
+        setBoxSelect(false);
         if (tool === 'station') setToolState('select');
       }
       if (e.key === 'Enter') {
@@ -546,6 +550,14 @@ export default function Editor({
     if (e.button === 1 || space.current) {
       clearPointer();
       setDrag({ kind: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y });
+      return;
+    }
+    if (tool === 'select' && boxSelect) {
+      const before = new Set(selected);
+      cancelDragRef.current = () => setSelected(before);
+      setSelected(new Set());
+      clearPointer();
+      setDrag({ kind: 'marquee', start: w, cur: w, base: new Set() });
       return;
     }
     let h = hit(target);
@@ -664,6 +676,14 @@ export default function Editor({
     } else if (!selected.has(key)) sel = new Set([key]);
     setSelected(sel);
 
+    if (sel.size > 1 && [...sel].some(key => key.startsWith('section:')) && (h.kind === 'station' || h.kind === 'section')) {
+      const sections = doc.sections.filter(s => sel.has(`section:${s.id}`));
+      const stations = doc.stations.filter(s => sel.has(`station:${s.id}`) || sections.some(g => s.x >= g.x && s.x <= g.x + g.w && s.y >= g.y && s.y <= g.y + g.h));
+      setDrag({ kind: 'selection', start: w, moved: false,
+        stations: new Map(stations.map(s => [s.id, { x: s.x, y: s.y }])),
+        sections: new Map(sections.map(s => [s.id, { x: s.x, y: s.y }])) });
+      return;
+    }
     if (h.kind === 'station') {
       const ids = [...sel].filter((s) => s.startsWith('station:')).map((s) => s.slice(8));
       const orig = new Map(doc.stations.filter((s) => ids.includes(s.id)).map((s) => [s.id, { x: s.x, y: s.y }]));
@@ -765,6 +785,7 @@ export default function Editor({
       const sel = new Set(drag.base);
       for (const s of doc.stations) if (s.x >= x0 && s.x <= x1 && s.y >= y0 && s.y <= y1) sel.add(`station:${s.id}`);
       for (const s of doc.sections) if (s.x >= x0 && s.x + s.w <= x1 && s.y >= y0 && s.y + s.h <= y1) sel.add(`section:${s.id}`);
+      for (const edge of doc.edges) if (sel.has(`station:${edge.from}`) && sel.has(`station:${edge.to}`)) sel.add(`edge:${edge.id}`);
       setSelected(sel);
       setDrag({ ...drag, cur: w });
       return;
@@ -776,7 +797,7 @@ export default function Editor({
       cancelDragRef.current = checkpoint();
       setDrag({ ...drag, moved: true });
       // The title stays fixed; automatic legends keep clearing the growing map.
-      if (drag.kind === 'stations' || drag.kind === 'section' || drag.kind === 'resize') {
+      if (drag.kind === 'stations' || drag.kind === 'section' || drag.kind === 'selection' || drag.kind === 'resize') {
         const tl = svgRef.current?.querySelector('[data-title-origin]');
         if ((doc.legend.auto && doc.legend.minY === undefined) || (doc.titleAuto && tl))
           preview((d) => {
@@ -788,7 +809,13 @@ export default function Editor({
           });
       }
     }
-    if (drag.kind === 'stations') {
+    if (drag.kind === 'selection') {
+      const delta = { x: snap(dx, 8), y: snap(dy, 24) };
+      preview(d => {
+        for (const s of d.stations) { const p = drag.stations.get(s.id); if (p) { s.x = p.x + delta.x; s.y = p.y + delta.y; } }
+        for (const s of d.sections) { const p = drag.sections.get(s.id); if (p) { s.x = p.x + delta.x; s.y = p.y + delta.y; } }
+      });
+    } else if (drag.kind === 'stations') {
       const lead = doc.stations.find((s) => s.id === drag.ids[0]);
       const o = drag.orig.get(drag.ids[0]);
       if (!lead || !o) return;
@@ -869,6 +896,7 @@ export default function Editor({
   const onPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
     if (touchNavigation.up(e)) { touchTap.current = null; return; }
     if (e.pointerType === 'touch' && drag?.kind === 'pan' && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) <= 8) setSelected(new Set());
+    if (drag?.kind === 'marquee' && boxSelect) setBoxSelect(false);
     const tap = touchTap.current;
     touchTap.current = null;
     if (tap) {
@@ -925,6 +953,7 @@ export default function Editor({
   }, [doc, tool, pending, hoveredId, active, previewId, canPreview]);
   const displayDoc = mergePreview ?? candidate?.doc ?? doc;
   const directlyMoved = useMemo(() => drag?.kind === 'stations' && drag.moved ? drag.ids
+    : drag?.kind === 'selection' && drag.moved ? [...drag.stations.keys()]
     : drag?.kind === 'section' && drag.moved ? [...drag.members.keys()] : NO_DRAGGED_STATIONS, [drag]);
   useMapLayoutMotion(svgRef, feedbackRef, displayDoc, directlyMoved, Boolean(drag && 'moved' in drag && drag.moved));
   const displayDerived = useMemo(() => displayDoc === doc ? derived : derive(displayDoc), [displayDoc, doc, derived]);
@@ -1038,7 +1067,13 @@ export default function Editor({
         <button onClick={downloadMapFile}>Download map file</button>
       </div>}
       {compact && <CompactTools doc={doc} tool={tool} active={selectedLine} theme={theme} stationKind={stationKind}
-        saveState={saveIndicator}
+        saveState={saveIndicator} selectionCount={selected.size} boxSelect={boxSelect}
+        onBoxSelect={() => { cancelGesture(); setBoxSelect(v => !v); }}
+        onSelectAll={() => { setBoxSelect(false); selectAll(); }} onClear={() => { setBoxSelect(false); setSelected(new Set()); }}
+        canDelete={[...selected].some(key => /^(station|edge|section):/.test(key))}
+        canDuplicate={[...selected].some(key => /^(station|section):/.test(key))}
+        onDelete={() => { deleteSelection(); flash('Deleted selection. Use Undo to restore it.'); }}
+        onDuplicate={() => { const clip = clipFromSelection(); if (clip) { pasteCount.current = 0; pasteClip(clip); } }}
         setTool={setTool} setStationKind={setStationKind} propertiesOpen={compactPanel === 'properties'}
         onLines={() => setCompactPanel('lines')} onProperties={() => setCompactPanel('properties')} />}
       <div className="body">
@@ -1059,7 +1094,7 @@ export default function Editor({
             ref={svgRef}
             className={`canvas tool-${tool}${space.current ? ' pan-ready' : ''}${drag?.kind === 'pan' ? ' panning'
               : drag?.kind === 'resize' ? ' resizing' : drag?.kind === 'marquee' ? ' marquee'
-                : drag && ['stations', 'section', 'legend', 'title', 'bend'].includes(drag.kind) ? ' dragging' : ''}`}
+                : drag && ['stations', 'section', 'selection', 'legend', 'title', 'bend'].includes(drag.kind) ? ' dragging' : ''}`}
             style={{ viewTransitionName: MORPH }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
@@ -1116,7 +1151,7 @@ export default function Editor({
 
           {mergeTarget && <div className="drawing-guidance" role="status">Release to merge into {mergeTarget.label || 'this station'}</div>}
           {!mergeTarget && <DrawingGuidance doc={doc} tool={tool} selected={selected} source={pendingStation} active={selectedLine}
-            target={hoveredStation ? candidate ? 'connect' : 'already' : 'none'} compact={compact} onTool={setTool}
+            target={hoveredStation ? candidate ? 'connect' : 'already' : 'none'} compact={compact} boxSelect={boxSelect} onTool={setTool}
             onExample={() => { replace(metagenomeExample()); setTool('select'); requestAnimationFrame(fit); }} />}
 
           <div className="float left-bottom">

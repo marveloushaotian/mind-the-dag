@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Editor from './Editor';
-import { emptyDoc, type Doc } from './model';
+import { createStation, emptyDoc, type Doc } from './model';
 
 vi.mock('./motion', async (original) => ({ ...await original<typeof import('./motion')>(), reducedMotion: () => true }));
 
@@ -281,5 +281,98 @@ describe('phone multi-touch navigation', () => {
     await touch('pointercancel', 1, 90, 410);
     expect(stations()).toHaveLength(0);
     await tap(canvas(), 80, 400); expect(stations()).toHaveLength(1);
+  });
+});
+
+
+describe('visible mobile selection actions', () => {
+  const flush = async () => { await act(async () => window.dispatchEvent(new Event('pagehide'))); return saved.mock.calls.at(-1)?.[0]; };
+  const world = (x: number, y: number) => {
+    const [k, tx, ty] = canvas().querySelector(':scope > g')!.getAttribute('transform')!.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/g)!.map(Number);
+    return { x: (x + tx) * k, y: 200 + (y + ty) * k };
+  };
+  const drag = async (target: Element, from: {x:number;y:number}, to: {x:number;y:number}) => {
+    await pointer(target, 'pointerdown', from.x, from.y);
+    await pointer(canvas(), 'pointermove', to.x, to.y);
+    await pointer(canvas(), 'pointerup', to.x, to.y);
+  };
+  function fixture() {
+    const d = emptyDoc();
+    d.stations = [{ ...createStation({x:24,y:24}, 'step'), id:'a' }, { ...createStation({x:80,y:24}, 'step'), id:'b' }, { ...createStation({x:192,y:96}, 'step'), id:'c' }];
+    d.sections = [{id:'section',name:'Processing',x:0,y:0,w:120,h:64,tint:0}];
+    d.edges = [{id:'ab',from:'a',to:'b',lines:[d.lines[0].id],bend:0.5}];
+    return d;
+  }
+  it('offers Delete immediately after touch selection and Undo restores the removed object', async () => {
+    await mount(); await click('Add stations'); await tap(canvas(),80,400); await click('Done'); await tap(stations()[0],80,400);
+    expect(button('Delete selection').textContent).toBe('Delete');
+    expect(host.querySelector('[role=dialog]')).toBeNull();
+    await click('Delete selection'); expect(stations()).toHaveLength(0);
+    await click('Undo'); expect(stations()).toHaveLength(1);
+  });
+  it('box-selects through a section, moves the complete selection once, deletes it and undoes both edits', async () => {
+    const d = fixture(); await mount(d); await click('Box select');
+    const section = host.querySelector('[data-sel="section:section"]')!;
+    await drag(section,world(-8,-8),world(128,72));
+    expect(button('Box select').getAttribute('aria-pressed')).toBe('false');
+    expect(host.textContent).toContain('4 selected');
+    const a = host.querySelector('[data-sel="station:a"]')!;
+    await drag(a,world(24,24),world(40,48));
+    const moved = await flush();
+    expect(moved?.stations.find(s=>s.id==='a')).toMatchObject({x:40,y:48});
+    expect(moved?.stations.find(s=>s.id==='b')).toMatchObject({x:96,y:48});
+    expect(moved?.stations.find(s=>s.id==='c')).toMatchObject({x:192,y:96});
+    expect(moved?.sections[0]).toMatchObject({x:16,y:24});
+    await click('Delete selection');
+    expect((await flush())?.stations.map(s=>s.id)).toEqual(['c']);
+    expect((await flush())?.edges).toHaveLength(0);
+    await click('Undo'); expect((await flush())?.stations).toHaveLength(3);
+    await click('Undo'); expect((await flush())?.stations).toEqual(d.stations);
+    expect((await flush())?.sections).toEqual(d.sections);
+  });
+  it('provides Select all, Duplicate and Clear without a keyboard', async () => {
+    const d = fixture(); await mount(d); await click('More selection actions'); await click('Select all');
+    expect(host.textContent).toContain('4 selected');
+    await click('More selection actions'); await click('Duplicate selection');
+    const copy = await flush();
+    expect(copy?.stations).toHaveLength(6); expect(copy?.sections).toHaveLength(2); expect(copy?.edges).toHaveLength(2);
+    await click('More selection actions'); await click('Clear selection');
+    expect(host.textContent).toContain('Select items');
+    expect([...host.querySelectorAll('button')].some(b=>b.getAttribute('aria-label')==='Delete selection')).toBe(false);
+    await click('Undo'); expect((await flush())?.stations).toHaveLength(3);
+  });
+  it('cancels an interrupted box selection without changing the previous selection or map history', async () => {
+    await mount(); await click('Add stations'); await tap(canvas(),80,400); await click('Done'); await tap(stations()[0],80,400);
+    await click('Box select'); await pointer(canvas(),'pointerdown',20,300);
+    await pointer(canvas(),'pointermove',40,340);
+    await pointer(canvas(),'pointerdown',180,400,'touch',2);
+    await pointer(canvas(),'pointerup',180,400,'touch',2);
+    await pointer(canvas(),'pointerup',40,340);
+    expect(host.textContent).toContain('1 selected');
+    await click('Box select'); await click('Undo'); expect(stations()).toHaveLength(0);
+  });
+  it('clears obsolete selection after undoing a duplicate and redoing it', async () => {
+    await mount(fixture()); await click('More selection actions'); await click('Select all');
+    await click('More selection actions'); await click('Duplicate selection');
+    expect((await flush())?.stations).toHaveLength(6);
+    await click('Undo');
+    expect(host.textContent).toContain('Select items');
+    expect((await flush())?.stations).toHaveLength(3);
+    await click('Redo');
+    expect(host.textContent).toContain('Select items');
+    expect((await flush())?.stations).toHaveLength(6);
+  });
+  it('rolls back a group move interrupted by a second finger without adding an undo step', async () => {
+    const d = fixture(); await mount(d); await click('More selection actions'); await click('Select all');
+    const from = world(24,24), to = world(64,72);
+    await pointer(host.querySelector('[data-sel="station:a"]')!, 'pointerdown', from.x, from.y);
+    await pointer(canvas(), 'pointermove', to.x, to.y);
+    expect((await flush())?.stations).not.toEqual(d.stations);
+    await pointer(canvas(), 'pointerdown', to.x+50, to.y, 'touch', 2);
+    await pointer(canvas(), 'pointerup', to.x+50, to.y, 'touch', 2);
+    await pointer(canvas(), 'pointerup', to.x, to.y);
+    expect((await flush())?.stations).toEqual(d.stations);
+    expect((await flush())?.sections).toEqual(d.sections);
+    expect(button('Undo').disabled).toBe(true);
   });
 });

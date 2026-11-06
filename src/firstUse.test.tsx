@@ -61,6 +61,25 @@ afterEach(async () => {
 });
 
 describe('independent first-map journey', () => {
+  it('does not save viewing, selecting, changing the camera, or reapplying the same palette', async () => {
+    const doc = emptyDoc(); doc.stations = [createStation({ x: 24, y: 24 }, 'step')];
+    await mount(doc);
+    await tap(stations()[0], 80, 400);
+    await click('Zoom in'); await click('Zoom out'); await click('Fit to screen');
+    await click('More selection actions'); await click('Clear selection');
+    await click('Open properties'); await click('Nordic'); await click('Back to canvas');
+    await act(async () => window.dispatchEvent(new Event('pagehide')));
+    expect(saved).not.toHaveBeenCalled(); expect(button('Undo').disabled).toBe(true);
+    expect(host.textContent).toContain('Saved in this browser');
+  });
+  it('does not save a title typed and reverted before the save timer fires', async () => {
+    const doc = emptyDoc(); await mount(doc);
+    const title = host.querySelector<HTMLInputElement>('[aria-label="Map title"]')!;
+    await fill(title, 'Temporary'); await fill(title, doc.title);
+    await act(async () => window.dispatchEvent(new Event('pagehide')));
+    expect(saved).not.toHaveBeenCalled();
+    expect(host.textContent).toContain('Saved in this browser');
+  });
   it('starts with an explicit action and does not open a keyboard or inspector automatically', async () => {
     await mount();
     expect(host.querySelector('[aria-label="Start drawing"]')).not.toBeNull();

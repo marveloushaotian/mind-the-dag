@@ -26,6 +26,29 @@ afterEach(async () => {
 it('does not write an unchanged map merely by opening it', async () => {
   await mount(); await advance(2000); expect(save).not.toHaveBeenCalled();
 });
+it('ignores identical content even when object identity or property order differs', async () => {
+  await mount();
+  await act(async () => sync.queue(Object.fromEntries(Object.entries(map.doc).reverse()) as typeof map.doc));
+  await advance(2000);
+  expect(save).not.toHaveBeenCalled(); expect(sync.state).toBe('saved');
+  expect(Object.keys(localStorage).filter(k => k.includes(map.id))).toHaveLength(0);
+});
+it('drops an edit reverted before transmission without changing cloud attribution', async () => {
+  await mount();
+  await act(async () => sync.queue({ ...map.doc, title: 'Temporary' }));
+  await act(async () => sync.queue(structuredClone(map.doc)));
+  await advance(2000);
+  expect(save).not.toHaveBeenCalled(); expect(sync.state).toBe('saved');
+});
+it('still saves a real revert when an earlier change is already in flight', async () => {
+  let finish!: (r: unknown) => void;
+  save.mockImplementationOnce(() => new Promise(r => { finish = r; })).mockResolvedValue({ ok: true, revision: 2, updated: 'reverted' });
+  await mount(); await act(async () => sync.queue({ ...map.doc, title: 'First' })); await advance(1250);
+  await act(async () => sync.queue(structuredClone(map.doc)));
+  await act(async () => finish({ ok: true, revision: 1, updated: 'first' })); await advance(450);
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(save.mock.calls[1]).toEqual([map.id, map.doc, 1]); expect(sync.state).toBe('saved');
+});
 it('retains failed cloud edits and retries using the same revision', async () => {
   save.mockRejectedValueOnce(new Error('Network unavailable')).mockResolvedValue({ ok: true, revision: 1, updated: 'new' });
   await mount();

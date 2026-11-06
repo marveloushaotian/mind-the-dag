@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { preserveSurvivingPorts, type Doc } from './model';
+import { sameDocument } from './documentContent';
 
 const LIMIT = 200;
 
@@ -20,13 +21,13 @@ export function useDocument(initial: () => Doc, onSave?: (d: Doc) => void) {
   const saveRef = useRef(onSave);
   saveRef.current = onSave;
   useEffect(() => {
-    if (doc === lastSaved.current) return;
+    if (sameDocument(doc, lastSaved.current)) return;
     const t = setTimeout(() => { saveRef.current?.(doc); lastSaved.current = doc; }, 300);
     return () => clearTimeout(t);
   }, [doc]);
   // Flush the latest state when the editor closes or the page goes away.
   useEffect(() => {
-    const flush = () => { if (docRef.current !== lastSaved.current) { saveRef.current?.(docRef.current); lastSaved.current = docRef.current; } };
+    const flush = () => { if (!sameDocument(docRef.current, lastSaved.current)) { saveRef.current?.(docRef.current); lastSaved.current = docRef.current; } };
     window.addEventListener('pagehide', flush);
     return () => {
       window.removeEventListener('pagehide', flush);
@@ -47,6 +48,7 @@ export function useDocument(initial: () => Doc, onSave?: (d: Doc) => void) {
     const next = structuredClone(docRef.current);
     fn(next);
     preserveSurvivingPorts(docRef.current, next);
+    if (sameDocument(docRef.current, next)) return;
     const now = Date.now();
     const same = key && lastKey.current && lastKey.current.key === key && now - lastKey.current.at < 1500;
     lastKey.current = key ? { key, at: now } : null;
@@ -75,11 +77,13 @@ export function useDocument(initial: () => Doc, onSave?: (d: Doc) => void) {
     const next = structuredClone(docRef.current);
     fn(next);
     preserveSurvivingPorts(docRef.current, next);
+    if (sameDocument(docRef.current, next)) return;
     docRef.current = next;
     setDoc(next);
   }, []);
 
   const replace = useCallback((d: Doc) => {
+    if (sameDocument(docRef.current, d)) return;
     push(docRef.current);
     docRef.current = d;
     setDoc(d);

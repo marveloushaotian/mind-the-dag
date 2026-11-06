@@ -16,7 +16,7 @@ LOG = logging.getLogger('save-smoke')
 def exercise(base, admin):
     def api(path, method='GET', data=None, token=admin, expected=200):
         return request(base, path, method, data, token, expected)
-    assert api('/api/mtd/capabilities', token='') == {'mapRevisionWrites': 1, 'mapRecovery': 1}
+    assert api('/api/mtd/capabilities', token='') == {'mapRevisionWrites': 1, 'mapRecovery': 1, 'contentAwareSaving': 1}
     api('/api/settings', 'PATCH', {'rateLimits': {'enabled': False}})
     users = []
     for name in ['alice', 'bob', 'carol']:
@@ -30,9 +30,18 @@ def exercise(base, admin):
     group = api('/api/collections/groups/records', 'POST', {'name': 'Test lab', 'owner': alice}, ta)['id']
     api('/api/collections/memberships/records', 'POST', {'group': group, 'user': bob, 'role': 'member'})
     doc = {'version': 1, 'title': 'Original', 'stations': [], 'edges': [], 'lines': [], 'sections': []}
-    m = api('/api/collections/maps/records', 'POST', {'title': 'Original', 'doc': doc, 'owner': bob, 'group': group}, tb)
+    m = api('/api/collections/maps/records', 'POST', {'title': 'Original', 'doc': doc, 'owner': bob, 'editedBy': bob, 'group': group}, tb)
     path = '/api/mtd/maps/' + m['id']
     record_path = '/api/collections/maps/records/' + m['id']
+    # Viewing and an identical save by another member preserve author, timestamp and revision.
+    before_view = api(record_path, token=ta)
+    reordered = dict(reversed(list(doc.items())))
+    result = api(path + '/save', 'POST', {'revision': 0, 'doc': reordered}, ta)
+    assert result['ok'] and result['revision'] == 0
+    after_view = api(record_path, token=tb)
+    for field in ['editedBy', 'updated', 'revision', 'doc']:
+        assert after_view[field] == before_view[field], field
+    LOG.info('Viewing and identical saves preserve last editor, timestamp and revision')
     # Both callers start from the same version. Exactly one wins on each round.
     revision = 0
     for round_no in range(12):
@@ -46,6 +55,7 @@ def exercise(base, admin):
         assert actual['revision'] == revision
         winner = next(i for i, result in enumerate(results) if result['ok'])
         assert actual['doc']['title'] == f'Round {round_no} writer {winner}'
+        assert actual['editedBy'] == [alice, bob][winner]
     LOG.info('12 simultaneous-save rounds: exactly one winner, no overwritten winner')
     api(path + '/save', 'POST', {'revision': revision, 'doc': doc}, tc, 404)
     api(path + '/restore', 'POST', {'revision': revision}, tc, 404)
@@ -58,6 +68,7 @@ def exercise(base, admin):
     revision += 1
     deleted = api(record_path, token=tb)
     assert deleted['deletedAt'] and deleted['doc'] == before['doc']
+    assert deleted['editedBy'] == before['editedBy']
     assert not api(path + '/save', 'POST', {'revision': revision - 1, 'doc': doc}, tb)['ok']
     api(path + '/save', 'POST', {'revision': revision, 'doc': doc}, tb, 400)
     assert not api(path + '/restore', 'POST', {'revision': revision - 1}, tb)['ok']
@@ -65,6 +76,7 @@ def exercise(base, admin):
     restored = api(record_path, token=ta)
     assert not restored['deletedAt'] and restored['doc'] == before['doc']
     assert restored['owner'] == bob and restored['group'] == group
+    assert restored['editedBy'] == before['editedBy']
     LOG.info('Deletion rejects stale writers; restoration preserves content, owner and group')
     # A regular group member cannot delete or restore a different author's map.
     other = api('/api/collections/maps/records', 'POST', {'title': 'Owner map', 'doc': doc, 'owner': alice, 'group': group}, ta)

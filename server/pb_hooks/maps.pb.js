@@ -35,12 +35,20 @@ routerAdd("POST", "/api/mtd/maps/{id}/{action}", (e) => {
       if (r.getString("deletedAt")) throw new BadRequestError("This map is in Recently deleted. Save your changes as a new map.");
       if (!body.doc || body.doc.version !== 1 || !Array.isArray(body.doc.stations) || !Array.isArray(body.doc.edges) || !Array.isArray(body.doc.lines) || !Array.isArray(body.doc.sections)) throw new BadRequestError("Invalid map document.");
       const title = String(body.doc.title || "Untitled").trim() || "Untitled";
+      const doc = Object.assign({}, body.doc, { title });
+      const content = (value) => JSON.stringify(value, (_key, v) => v && typeof v === "object" && !Array.isArray(v)
+        ? Object.keys(v).sort().reduce((out, key) => { out[key] = v[key]; return out; }, {}) : v);
+      // A no-op save must not claim authorship, reorder cards or invalidate another editor.
+      if (title === r.getString("title") && content(doc) === content(JSON.parse(r.getString("doc")))) {
+        result = { ok: true, revision: r.getInt("revision"), updated: r.getString("updated") };
+        return;
+      }
       r.set("title", title);
-      r.set("doc", Object.assign({}, body.doc, { title }));
+      r.set("doc", doc);
+      r.set("editedBy", e.auth.id);
     } else {
       r.set("deletedAt", action === "trash" ? new Date().toISOString() : "");
     }
-    r.set("editedBy", e.auth.id);
     r.set("revision", r.getInt("revision") + 1);
     tx.save(r);
     result = { ok: true, revision: r.getInt("revision"), updated: r.getString("updated") };
@@ -52,4 +60,5 @@ routerAdd("POST", "/api/mtd/maps/{id}/{action}", (e) => {
 routerAdd("GET", "/api/mtd/capabilities", (e) => e.json(200, {
   mapRevisionWrites: 1,
   mapRecovery: 1,
+  contentAwareSaving: 1,
 }));

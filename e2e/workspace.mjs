@@ -211,10 +211,28 @@ try {
   await A.goto(groupMapUrl);
   await saved(A);
 
+  log('Bob views a group map without taking edit credit');
+  const groupRecordPath = `/api/collections/maps/records/${groupMapUrl.split('/').at(-1)}`;
+  const beforeViewing = await api(groupRecordPath, {}, su);
+  await B.goto(groupMapUrl);
+  await B.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  await B.getByRole('button', { name: 'Fit to screen', exact: true }).click();
+  await B.getByRole('button', { name: 'Nordic', exact: true }).click();
+  await B.getByLabel('Map title').focus();
+  await B.getByRole('button', { name: /all maps/ }).click();
+  await B.locator('.card-title', { hasText: 'Group map' }).waitFor();
+  await sleep(1800);
+  const afterViewing = await api(groupRecordPath, {}, su);
+  for (const field of ['editedBy', 'updated', 'revision']) {
+    if (afterViewing[field] !== beforeViewing[field]) throw new Error(`Viewing changed ${field}`);
+  }
+
   log('both edit the group map: the later save is held back');
   await B.goto(groupMapUrl);
   await B.getByLabel('Map title').fill('Group map (Bob)');
   await saved(B);
+  const afterEditing = await api(groupRecordPath, {}, su);
+  if (afterEditing.editedBy === beforeViewing.editedBy || afterEditing.revision !== beforeViewing.revision + 1) throw new Error('Real edit did not update attribution and revision');
   await A.getByLabel('Map title').fill('Group map (Alice)');
   await A.getByText(/saved a newer version/).waitFor({ timeout: 15000 });
   await A.getByRole('button', { name: 'Use their version' }).click();

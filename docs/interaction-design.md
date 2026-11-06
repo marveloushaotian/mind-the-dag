@@ -433,6 +433,13 @@ and prevent the All maps button from silently abandoning unsaved changes.
 Cloud failures distinguish confirmed browser storage from memory-only edits;
 network/server failures never imply that a browser backup succeeded.
 Opening a map without editing does not create a new save or revision.
+Content comparisons ignore object identity and JSON property order. Reapplying
+an existing setting or reverting an edit before transmission does not write.
+The server also treats identical saves as no-ops, preserving the last content
+editor, timestamp and revision. Real reverts after a completed save are edits.
+Trash and restore preserve the last content editor; they still advance the
+revision to protect open editors. The creator shown on group cards is separate
+from the last editor and does not change when someone views the map.
 
 Cloud saves, trash and restore operations use one server write transaction.
 The client supplies a monotonically increasing revision; permissions and the

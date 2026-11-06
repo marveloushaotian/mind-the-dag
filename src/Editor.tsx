@@ -8,6 +8,7 @@ import { createStation, derive, emptyDoc, mergeStations, pruneLines, snap, snapS
 import { Inspector, LeftRail, TOOLS, type Tool } from './panels';
 import { edgeGeometry, MetroMap, reserveAutoLegend } from './render';
 import { useDocument } from './store';
+import { sameDocument } from './documentContent';
 import { MAX_ZOOM, MIN_ZOOM, usePanZoom } from './panzoom';
 import { useTouchNavigation } from './useTouchNavigation';
 import { lineStyle, tints, tokens, type ThemeId } from './tokens';
@@ -76,12 +77,13 @@ export default function Editor({
     },
   );
   const { doc, update, preview, checkpoint, undo, redo, replace } = store;
+  const unchanged = useMemo(() => sameDocument(doc, savedDoc), [doc, savedDoc]);
   useEffect(() => {
-    if (saveState || (!saveError && doc === savedDoc)) return;
+    if (saveState || (!saveError && unchanged)) return;
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [saveError, doc, savedDoc, saveState]);
+  }, [saveError, unchanged, saveState]);
   const [tool, setToolState] = useState<Tool>('select');
   const [stationKind, setStationKind] = useState<StationKind>('step');
   const [boxSelect, setBoxSelect] = useState(false);
@@ -270,7 +272,7 @@ export default function Editor({
     titleAtFocus.current = doc.title;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const saveBeforeLeaving = () => {
-    if (saveState || (!saveError && doc === savedDoc)) return true;
+    if (saveState || (!saveError && unchanged)) return true;
     try { onSave(doc); setSavedDoc(doc); setSaveError(null); return true; }
     catch (e) { setSaveError(e instanceof Error ? e.message : 'Could not save. Download your changes before leaving.'); return false; }
   };
@@ -984,7 +986,7 @@ export default function Editor({
     onDelete={() => { deleteSelection(); setCompactPanel(null); }}
     placement={tool === 'station' ? { kind: stationKind, setKind: setStationKind } : undefined} />;
   const saveIndicator = saveState ?? <span className="save-state" title="Maps are saved automatically in this browser">
-    {saveError ? 'Not saved' : savedDoc === doc ? compact ? 'Saved in this browser' : 'Saved' : 'Saving…'}
+    {saveError ? 'Not saved' : unchanged ? compact ? 'Saved in this browser' : 'Saved' : 'Saving…'}
   </span>;
 
   return (

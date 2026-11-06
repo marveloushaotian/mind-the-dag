@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { explain, saveCloudMap, type CloudMap } from './cloud';
 import type { Doc } from './model';
+import { sameDocument } from './documentContent';
 
 export type SyncState = 'saved' | 'saving' | 'offline' | 'conflict' | 'error';
 
@@ -61,6 +62,7 @@ export function useCloudSync(map: CloudMap) {
   const [state, setState] = useState<SyncState>(() => (pendingEdits(map.id, map.updated) ? 'saving' : 'saved'));
   const [theirs, setTheirs] = useState<CloudMap | null>(null);
   const base = useRef(typeof initial.current?.base === 'number' ? initial.current.base : initial.current ? -1 : map.revision);
+  const confirmed = useRef({ doc: map.doc, revision: map.revision });
   const pending = useRef<Doc | null>(pendingEdits(map.id, map.updated));
   const timer = useRef<number | undefined>(undefined);
   const busy = useRef(false);
@@ -71,6 +73,13 @@ export function useCloudSync(map: CloudMap) {
     window.clearTimeout(timer.current);
     if (busy.current || blocked.current || !pending.current) return;
     const doc = pending.current;
+    if (base.current === confirmed.current.revision && sameDocument(doc, confirmed.current.doc)) {
+      pending.current = null;
+      writePending(map.id, null);
+      setError(null);
+      setState('saved');
+      return;
+    }
     busy.current = true;
     try {
       const r = await saveCloudMap(map.id, doc, base.current);
@@ -81,6 +90,7 @@ export function useCloudSync(map: CloudMap) {
         return;
       }
       base.current = r.revision;
+      confirmed.current = { doc, revision: r.revision };
       setError(null);
       if (pending.current === doc) {
         pending.current = null;
@@ -102,6 +112,14 @@ export function useCloudSync(map: CloudMap) {
 
   const queue = useCallback(
     (doc: Doc) => {
+      if (!busy.current && !blocked.current && base.current === confirmed.current.revision && sameDocument(doc, confirmed.current.doc)) {
+        window.clearTimeout(timer.current);
+        pending.current = null;
+        writePending(map.id, null);
+        setError(null);
+        setState('saved');
+        return;
+      }
       pending.current = doc;
       writePending(map.id, { doc, base: base.current });
       if (blocked.current) return;
@@ -153,6 +171,7 @@ export function useCloudSync(map: CloudMap) {
   const takeTheirs = useCallback((): Doc | null => {
     if (!theirs) return null;
     base.current = theirs.revision;
+    confirmed.current = { doc: theirs.doc, revision: theirs.revision };
     pending.current = null;
     writePending(map.id, null);
     blocked.current = false;

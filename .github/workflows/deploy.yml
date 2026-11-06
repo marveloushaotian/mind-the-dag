@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           for attempt in $(seq 1 96); do
-            if curl --fail --silent --max-time 10 https://library-mind-the-dag.2.rahtiapp.fi/api/mtd/capabilities | jq -e '.mapRevisionWrites == 1 and .mapRecovery == 1' >/dev/null; then
+            if curl --fail --silent --max-time 10 https://library-mind-the-dag.2.rahtiapp.fi/api/mtd/capabilities | jq -e '.mapRevisionWrites == 1 and .mapRecovery == 1 and .contentAwareSaving == 1' >/dev/null; then
               echo "The library server supports safe saving and recovery."
               exit 0
             fi

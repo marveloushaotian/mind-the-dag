@@ -22,7 +22,7 @@ describe('draft backup', () => {
     expect(b.maps).toHaveLength(2);
     (globalThis as { localStorage?: unknown }).localStorage = new MemStorage();
     expect(restoreBackup(b)).toBe(2);
-    expect(listMaps().map((m) => m.title).sort()).toEqual(['mag-lite', 'second']);
+    expect(listMaps().map((m) => m.title).sort()).toEqual(['Metagenome example', 'second']);
   });
 });
 

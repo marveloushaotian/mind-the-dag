@@ -23,7 +23,9 @@ export function download(name: string, data: Blob) {
 }
 
 export function slug(s: string) {
-  return (s || 'map').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'map';
+  const name = (s || 'map').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 100).replace(/^-|-$/g, '') || 'map';
+  // Windows reserves these basenames even when a file extension is present.
+  return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(name) ? `map-${name}` : name;
 }
 
 // ------------------------------------------------------------------ fonts

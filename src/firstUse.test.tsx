@@ -395,3 +395,55 @@ describe('visible mobile selection actions', () => {
     expect(button('Undo').disabled).toBe(true);
   });
 });
+
+describe('desktop keyboard compatibility', () => {
+  const key = async (key: string, options: KeyboardEventInit = {}, target: EventTarget = document.body) => {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...options });
+    await act(async () => { target.dispatchEvent(event); });
+    return event;
+  };
+  const oneStation = () => { const d = emptyDoc(); d.stations = [createStation({ x: 24, y: 24 }, 'step')]; return d; };
+  it.each(['ctrlKey', 'metaKey'] as const)('selects, duplicates, deletes, undoes, redoes and saves with %s', async (modifier) => {
+    compact = false; await mount(oneStation());
+    const mod = { [modifier]: true };
+    expect((await key('a', mod)).defaultPrevented).toBe(true);
+    await key('d', mod); expect(stations()).toHaveLength(2);
+    await key('z', mod); expect(stations()).toHaveLength(1);
+    await key('Z', { ...mod, shiftKey: true }); expect(stations()).toHaveLength(2);
+    await key('a', mod); await key('Delete'); expect(stations()).toHaveLength(0);
+    await key('z', mod); expect(stations()).toHaveLength(2);
+    await key('y', mod); expect(stations()).toHaveLength(0);
+    await key('z', mod);
+    expect((await key('s', mod)).defaultPrevented).toBe(true);
+    expect(saved.mock.lastCall?.[0].stations).toHaveLength(2);
+  });
+  it('does not treat composition, AltGr, Option or consumed events as editor shortcuts', async () => {
+    await mount(oneStation()); await key('a', { ctrlKey: true });
+    for (const options of [{ isComposing: true }, { keyCode: 229 }, { altKey: true }, { ctrlKey: true, altKey: true }]) {
+      expect((await key('Backspace', options)).defaultPrevented).toBe(false);
+      await key('s', options);
+      expect(button('Select').getAttribute('aria-pressed')).toBe('true');
+      expect(stations()).toHaveLength(1);
+    }
+    const consumed = new KeyboardEvent('keydown', { key: 'Delete', cancelable: true }); consumed.preventDefault();
+    await act(async () => { window.dispatchEvent(consumed); });
+    expect(stations()).toHaveLength(1); expect(saved).not.toHaveBeenCalled();
+  });
+  it('leaves text editing shortcuts and composition confirmation inside the title field', async () => {
+    await mount(oneStation()); await key('a', { ctrlKey: true });
+    const title = host.querySelector<HTMLInputElement>('[aria-label="Map title"]')!; title.focus();
+    for (const name of ['a', 'z', 'y', 'd', 'Backspace']) {
+      expect((await key(name, { ctrlKey: name !== 'Backspace' }, title)).defaultPrevented).toBe(false);
+    }
+    await key('Enter', { isComposing: true }, title); expect(document.activeElement).toBe(title);
+    await key('Enter', { keyCode: 229 }, title); expect(document.activeElement).toBe(title);
+    expect(stations()).toHaveLength(1);
+  });
+  it('does not cut the canvas selection while a dialog owns the clipboard', async () => {
+    await mount(oneStation()); await key('a', { ctrlKey: true }); await key('?');
+    expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+    const event = new Event('cut', { bubbles: true, cancelable: true });
+    await act(async () => { document.activeElement!.dispatchEvent(event); });
+    expect(event.defaultPrevented).toBe(false); expect(stations()).toHaveLength(1);
+  });
+});

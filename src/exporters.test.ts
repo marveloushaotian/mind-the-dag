@@ -12,6 +12,14 @@ describe('journal fit (1 px = 0.5 pt)', () => {
   it('makes file names', () => {
     expect(slug('nf-core/mag lite!')).toBe('nf-core-mag-lite');
   });
+  it.each(['CON', 'prn', 'AUX', 'NUL', 'COM1', 'COM9', 'LPT1', 'LPT9'])('avoids reserved Windows filenames (%s)', (name) => {
+    expect(slug(name)).toBe(`map-${name.toLowerCase()}`);
+  });
+  it('bounds long filenames and removes trailing punctuation', () => {
+    expect(slug('a'.repeat(99) + ' / ' + 'b'.repeat(200))).toBe('a'.repeat(99));
+    expect(slug('... / : * ? " < > |')).toBe('map');
+    expect(slug('COM10')).toBe('com10');
+  });
 });
 
 describe('export failure messages', () => {

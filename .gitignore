@@ -150,3 +150,6 @@ vite.config.ts.timestamp-*
 
 # local scratch
 tmp/
+
+# Browser acceptance artifacts
+test-results/

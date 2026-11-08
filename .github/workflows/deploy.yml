@@ -15,6 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  compatibility:
+    uses: ./.github/workflows/compatibility.yml
   build:
     runs-on: ubuntu-latest
     steps:
@@ -33,7 +35,7 @@ jobs:
         with:
           path: dist
   deploy:
-    needs: build
+    needs: [build, compatibility]
     runs-on: ubuntu-latest
     environment:
       name: github-pages

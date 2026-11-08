@@ -9,6 +9,7 @@ import { Inspector, LeftRail, TOOLS, type Tool } from './panels';
 import { edgeGeometry, MetroMap, reserveAutoLegend } from './render';
 import { useDocument } from './store';
 import { sameDocument } from './documentContent';
+import { isTextComposition, shortcut, redoShortcut } from './keyboard';
 import { MAX_ZOOM, MIN_ZOOM, usePanZoom } from './panzoom';
 import { useTouchNavigation } from './useTouchNavigation';
 import { lineStyle, tints, tokens, type ThemeId } from './tokens';
@@ -357,7 +358,7 @@ export default function Editor({
   useEffect(() => {
     const editingText = () => {
       const a = document.activeElement as HTMLElement | null;
-      return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable);
+      return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable || !!a.closest('[role="dialog"]'));
     };
     const onCopy = (e: ClipboardEvent, cut = false) => {
       if (editingText()) return;
@@ -408,6 +409,7 @@ export default function Editor({
   // ---------------------------------------------------------------- keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || isTextComposition(e) || e.altKey || e.getModifierState('AltGraph')) return;
       const t = e.target as HTMLElement;
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
       const mod = e.metaKey || e.ctrlKey;
@@ -1000,7 +1002,7 @@ export default function Editor({
           className="doc-title"
           value={doc.title}
           onChange={(e) => update((d) => void (d.title = e.target.value), 'title')}
-          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+          onKeyDown={(e) => e.key === 'Enter' && !isTextComposition(e.nativeEvent) && e.currentTarget.blur()}
           onBlur={() => void commitTitle()}
           aria-label="Map title"
           spellCheck={false}
@@ -1015,10 +1017,10 @@ export default function Editor({
         )}
         {!compact && saveIndicator}
         <div className="group">
-          <button className="icon" onClick={undoEdit} disabled={!store.canUndo} title="Undo (⌘Z)" aria-label="Undo">
+          <button className="icon" onClick={undoEdit} disabled={!store.canUndo} title={`Undo (${shortcut('Z')})`} aria-label="Undo">
             <IUndo />
           </button>
-          <button className="icon" onClick={redoEdit} disabled={!store.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">
+          <button className="icon" onClick={redoEdit} disabled={!store.canRedo} title={`Redo (${redoShortcut})`} aria-label="Redo">
             <IRedo />
           </button>
         </div>
@@ -1031,7 +1033,7 @@ export default function Editor({
           <Menu
             label="Open"
             items={[
-              { label: 'Open file…', hint: '⌘O', onSelect: () => fileInput.current?.click() },
+              { label: 'Open file…', hint: shortcut('O'), onSelect: () => fileInput.current?.click() },
               { label: 'Example map', onSelect: openExample },
             ]}
           />

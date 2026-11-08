@@ -7,9 +7,7 @@ import { cancelSocialSignIn, cloudEnabled, createCloudMap, explain, listMyGroups
 import type { Place } from './Editor';
 import githubMark from './brand/github-mark-white.svg';
 import googleMark from './brand/google-mark.png';
-
-export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-const MOD = isMac ? '⌘' : 'Ctrl';
+import { isMac, modifierLabel as MOD, shiftLabel as SHIFT } from './keyboard';
 
 // Only the top dialog owns keyboard input, including nested sign-in dialogs.
 const modalStack: HTMLElement[] = [];
@@ -129,13 +127,13 @@ const GROUPS: [string, [string, string[]][]][] = [
     'Editing',
     [
       ['Undo', [MOD, 'Z']],
-      ['Redo', ['⇧', MOD, 'Z']],
+      ['Redo', isMac ? [SHIFT, MOD, 'Z'] : [MOD, 'Y', '/', MOD, SHIFT, 'Z']],
       ['Select an area', ['Drag on empty canvas']],
-      ['Add to selection', ['⇧', 'Click']],
+      ['Add to selection', [SHIFT, 'Click']],
       ['Select all', [MOD, 'A']],
       ['Copy, cut, paste', [MOD, 'C', '/', 'X', '/', 'V']],
       ['Duplicate', [MOD, 'D']],
-      ['Delete', ['⌫']],
+      ['Delete', isMac ? ['⌫'] : ['Delete', '/', 'Backspace']],
       ['Nudge', ['←', '↑', '→', '↓']],
     ],
   ],
@@ -153,6 +151,7 @@ const GROUPS: [string, [string, string[]][]][] = [
     'File',
     [
       ['Open a file', [MOD, 'O']],
+      ['Save (also automatic)', [MOD, 'S']],
       ['Show this list', ['?']],
     ],
   ],

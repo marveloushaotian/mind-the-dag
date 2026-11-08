@@ -1,0 +1,43 @@
+name: Desktop compatibility
+on:
+  workflow_call:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desktop:
+    name: ${{ matrix.os }} / ${{ matrix.browser }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            browser: chromium
+          - os: windows-latest
+            browser: msedge
+          - os: macos-latest
+            browser: chromium
+          - os: macos-latest
+            browser: webkit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+        env:
+          VITE_LIBRARY_URL: ''
+      - run: npm i --no-save playwright@1.63.0
+      - run: npx playwright install ${{ matrix.browser }}
+      - run: node e2e/compatibility.mjs ${{ matrix.browser }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compatibility-${{ matrix.os }}-${{ matrix.browser }}
+          path: test-results/
+          retention-days: 7

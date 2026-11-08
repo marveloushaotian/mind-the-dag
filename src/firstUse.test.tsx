@@ -305,6 +305,15 @@ describe('phone multi-touch navigation', () => {
 
 
 describe('visible mobile selection actions', () => {
+  it('explains movement and deletion for desktop multi-selection instead of unavailable name editing', async () => {
+    compact = false;
+    const doc = emptyDoc();
+    doc.stations = [createStation({ x: 24, y: 24 }, 'step'), createStation({ x: 80, y: 24 }, 'step')];
+    await mount(doc);
+    await act(async () => canvas().dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true })));
+    expect(host.querySelector('[aria-label="Drawing guidance"]')?.textContent).toContain('move the selection');
+    expect(host.querySelector('[aria-label="Drawing guidance"]')?.textContent).not.toContain('Edit the name');
+  });
   const flush = async () => { await act(async () => window.dispatchEvent(new Event('pagehide'))); return saved.mock.calls.at(-1)?.[0]; };
   const world = (x: number, y: number) => {
     const [k, tx, ty] = canvas().querySelector(':scope > g')!.getAttribute('transform')!.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/g)!.map(Number);

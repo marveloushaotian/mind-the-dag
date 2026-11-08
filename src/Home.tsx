@@ -1,5 +1,6 @@
 import { RecentlyDeleted } from './RecentlyDeleted';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { metagenomeExample } from './examples';
 import { IDuplicate, IFile, IGroup, IPlus, ITrash, IUpload } from './icons';
 import { Wordmark } from './ui';
@@ -72,10 +73,10 @@ function Thumb({ doc }: { doc: Doc | null }) {
   );
 }
 
-/** A map card with hover actions; destructive actions ask once inline. */
+/** Map actions remain visible for touch, keyboard and first-time visitors. */
 const CARD_ICONS = { duplicate: IDuplicate, group: IGroup, upload: IUpload };
 
-function Card({
+export function Card({
   id,
   index = 0,
   doc,
@@ -121,37 +122,35 @@ function Card({
         <span className="card-title">{title || 'Untitled'}</span>
         <span className="card-meta">{meta}</span>
       </button>
-      {actionError && <p className="note warn" role="alert">{actionError}</p>}
-      {!confirm && (
-        <div className="card-actions">
-          {actions.map((a) => {
-            const Icon = CARD_ICONS[a.icon];
-            return (
-              <button key={a.label} className="card-act" disabled={busy} onClick={() => void act(a.run)} aria-label={a.label} data-tip={a.label}>
-                <Icon size={16} />
-              </button>
-            );
-          })}
-          {danger && (
-            <button className="card-act danger" disabled={busy} onClick={() => setConfirm(true)} aria-label={danger.label} data-tip={danger.label}>
-              <ITrash size={16} />
+      {actionError && !confirm && <p className="note warn" role="alert">{actionError}</p>}
+      <div className="card-actions" role="group" aria-label={`Actions for ${title || 'Untitled'}`}>
+        {actions.map((a) => {
+          const Icon = CARD_ICONS[a.icon];
+          return (
+            <button key={a.label} className="card-act" disabled={busy} onClick={() => void act(a.run)}>
+              <Icon size={16} />{a.label}
             </button>
-          )}
-        </div>
-      )}
-      {confirm && danger && (
-        <div className="card-confirm" role="alertdialog" aria-label={`Delete ${title || 'Untitled'}?`}>
-          <strong>Delete “{title || 'Untitled'}”?</strong>
-          {danger.warning && <span>{danger.warning}</span>}
+          );
+        })}
+        {danger && (
+          <button className="card-act danger" disabled={busy} onClick={() => { setActionError(null); setConfirm(true); }}>
+            <ITrash size={16} />{danger.label}
+          </button>
+        )}
+      </div>
+      {confirm && danger && createPortal(
+        <Modal title={`Delete “${title || 'Untitled'}”?`} onClose={() => setConfirm(false)} dismissible={!busy}>
+          {danger.warning && <p className="note">{danger.warning}</p>}
+          {actionError && <p className="note warn" role="alert">{actionError}</p>}
           <div className="card-confirm-actions">
-            <button disabled={busy} onClick={() => setConfirm(false)} autoFocus>
-              Keep
+            <button disabled={busy} onClick={() => setConfirm(false)}>
+              Keep map
             </button>
-            <button className="solid-danger" disabled={busy} onClick={() => void act(danger.run)}>
-              {danger.confirm}
+            <button className="solid-danger" disabled={busy} onClick={() => void act(async () => { await danger.run(); setConfirm(false); })}>
+              {busy ? 'Deleting…' : danger.confirm}
             </button>
           </div>
-        </div>
+        </Modal>, document.body
       )}
     </li>
   );

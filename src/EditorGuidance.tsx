@@ -86,8 +86,8 @@ export function DrawingGuidance({ doc, tool, selected, source, target, active, c
     message = 'Drag around steps to add a section. Select the section to name it or change its fill.';
     next = { label: 'Done', tool: 'select' };
   } else if (selected.size) {
-    message = !compact ? 'Edit the name and appearance in the properties panel.'
-      : selected.size > 1 ? 'Drag a selected station or section to move the selection. Delete removes selected items.'
+    message = selected.size > 1 ? 'Drag a selected station or section to move the selection. Delete removes selected items.'
+      : !compact ? 'Edit the name and appearance in the properties panel.'
       : [...selected].some(key => key.startsWith('edge:')) ? 'Open Properties to edit the connection, or Delete to remove it.'
       : [...selected].some(key => /^(station|section):/.test(key)) ? 'Drag to move. Open Properties to edit, or Delete to remove.'
       : 'Drag to move. Open Properties to edit your selection.';

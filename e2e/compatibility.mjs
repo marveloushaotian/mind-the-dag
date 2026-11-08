@@ -119,6 +119,34 @@ try {
   await page.context().setOffline(false);
   await page.reload(); await count(initialCount);
   assert.equal(await page.getByLabel('Map title').inputValue(), 'Offline retained');
+
+  log('find map actions without hover, cancel deletion, and restore a deleted map');
+  await page.getByRole('button', { name: 'mind-the-dag: all maps', exact: true }).click();
+  const card = page.locator('.card').filter({ has: page.locator('.card-title', { hasText: /^Offline retained$/ }) });
+  await card.waitFor({ state: 'visible' });
+  await page.mouse.move(0, 0);
+  assert(await card.getByRole('button', { name: 'Duplicate', exact: true }).isVisible());
+  assert(await card.getByRole('button', { name: 'Delete', exact: true }).isVisible());
+  await card.getByRole('button', { name: 'Delete', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Delete “Offline retained”?' }).waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  assert(await card.getByRole('button', { name: 'Delete', exact: true }).evaluate(el => el === document.activeElement));
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await card.getByRole('button', { name: 'Delete', exact: true }).click();
+  const confirmation = page.getByRole('dialog', { name: 'Delete “Offline retained”?' });
+  await confirmation.getByText(/Recently deleted/).waitFor();
+  await confirmation.getByRole('button', { name: 'Delete', exact: true }).click();
+  await card.waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Recently deleted', exact: true }).click();
+  const recovery = page.getByRole('dialog', { name: 'Recently deleted', exact: true });
+  await recovery.locator('.callout').filter({ hasText: 'Offline retained' }).getByRole('button', { name: 'Restore', exact: true }).click();
+  await recovery.getByRole('status').filter({ hasText: 'Restored “Offline retained”.' }).waitFor();
+  await recovery.getByRole('button', { name: 'Close', exact: true }).click();
+  await card.locator('.card-main').click(); await count(initialCount);
+  assert.equal(await page.getByLabel('Map title').inputValue(), 'Offline retained');
+  await page.setViewportSize({ width: 1400, height: 900 });
   assert.deepEqual(errors, [], 'Unexpected browser errors');
   await mkdir('test-results', { recursive: true });
   await page.screenshot({ path: `test-results/${process.platform}-${engine}.png` });

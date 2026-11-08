@@ -30,7 +30,9 @@ it('offers named actions without opening the map', async () => {
   await click('Duplicate'); expect(duplicate).toHaveBeenCalledOnce(); expect(open).not.toHaveBeenCalled();
 });
 it('cancels deletion with Escape and restores focus to its visible trigger', async () => {
-  const trigger = button('Delete'); await click('Delete');
+  const trigger = button('Delete');
+  // Model pointer activation in WebKit: the trigger is not already focused.
+  await act(async () => trigger.click());
   const dialog = document.querySelector('[role="dialog"]')!;
   expect(dialog.textContent).toContain('Recently deleted');
   expect(dialog.contains(document.activeElement)).toBe(true);

@@ -133,7 +133,10 @@ export function Card({
           );
         })}
         {danger && (
-          <button className="card-act danger" disabled={busy} onClick={() => { setActionError(null); setConfirm(true); }}>
+          <button className="card-act danger" disabled={busy} onClick={(e) => {
+            // WebKit does not focus buttons on pointer clicks; give the dialog a return target.
+            e.currentTarget.focus(); setActionError(null); setConfirm(true);
+          }}>
             <ITrash size={16} />{danger.label}
           </button>
         )}
